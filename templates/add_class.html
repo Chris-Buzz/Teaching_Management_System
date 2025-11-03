@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}Add Class - Teaching Management System{% endblock %}
+
+{% block content %}
+<div class="form-container">
+    <h1><i class="fas fa-plus-circle"></i> Add New Class</h1>
+    <p style="text-align: center; color: var(--text-secondary); margin-bottom: 2rem;">Create a new class to manage students and attendance</p>
+    <form method="POST" action="{{ url_for('add_class') }}">
+        <div class="form-group">
+            <label for="name"><i class="fas fa-book"></i> Class Name</label>
+            <input type="text" id="name" name="name" placeholder="e.g., Introduction to Computer Science" required autofocus>
+        </div>
+        <div class="form-group">
+            <label for="code"><i class="fas fa-code"></i> Class Code</label>
+            <input type="text" id="code" name="code" placeholder="e.g., CS101" required>
+            <small>A unique identifier for this class</small>
+        </div>
+        <div class="form-group">
+            <label for="description"><i class="fas fa-align-left"></i> Description</label>
+            <textarea id="description" name="description" rows="4" placeholder="Brief description of the class"></textarea>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-check"></i> Create Class
+            </button>
+            <a href="{{ url_for('teacher_dashboard') }}" class="btn btn-secondary">
+                <i class="fas fa-times"></i> Cancel
+            </a>
+        </div>
+    </form>
+</div>
+{% endblock %}

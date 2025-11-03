@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}Attendance History - {{ class_obj.name }}{% endblock %}
+
+{% block content %}
+<div class="history-detail">
+    <h1>{{ class_obj.name }}</h1>
+    <p class="class-code">{{ class_obj.code }}</p>
+    
+    <h2>My Attendance History</h2>
+    
+    {% if records %}
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for record in records %}
+                    <tr>
+                        <td>{{ record.session.date.strftime('%B %d, %Y at %I:%M %p') }}</td>
+                        <td>
+                            {% if record.status == 'Present' %}
+                                <span class="badge badge-success">✓ Present</span>
+                            {% elif record.status == 'Absent' %}
+                                <span class="badge badge-danger">✗ Absent</span>
+                            {% else %}
+                                <span class="badge badge-secondary">{{ record.status }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <div class="empty-state">
+            <p>No attendance records yet for this class.</p>
+        </div>
+    {% endif %}
+    
+    <div class="back-link">
+        <a href="{{ url_for('student_dashboard') }}">← Back to Dashboard</a>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Student Dashboard - Teaching Management System{% endblock %}
+
+{% block content %}
+<div class="dashboard">
+    <div class="dashboard-header">
+        <h1><i class="fas fa-user-graduate"></i> My Classes</h1>
+    </div>
+
+    {% if attendance_data %}
+        <div class="class-grid">
+            {% for data in attendance_data %}
+                <div class="class-card">
+                    <h3><i class="fas fa-book-open"></i> {{ data.class.name }}</h3>
+                    <p class="class-code"><i class="fas fa-code"></i> {{ data.class.code }}</p>
+
+                    <div class="attendance-stats">
+                        <div class="stat">
+                            <span class="stat-label"><i class="fas fa-chart-line"></i> Attendance Rate</span>
+                            <span class="stat-value {% if data.percentage >= 80 %}stat-success{% elif data.percentage >= 60 %}stat-warning{% else %}stat-danger{% endif %}">
+                                {{ data.percentage }}%
+                            </span>
+                        </div>
+                        <div class="stat-breakdown">
+                            <span class="present-count"><i class="fas fa-check-circle"></i> {{ data.present }} Present</span>
+                            <span class="absent-count"><i class="fas fa-times-circle"></i> {{ data.absent }} Absent</span>
+                            <span class="total-count"><i class="fas fa-calendar-alt"></i> Total: {{ data.total }} sessions</span>
+                        </div>
+                    </div>
+
+                    <a href="{{ url_for('student_class_history', class_id=data.class.id) }}" class="btn btn-primary btn-sm">
+                        <i class="fas fa-history"></i> View History
+                    </a>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="empty-state">
+            <i class="fas fa-user-slash" style="font-size: 4rem; color: var(--text-secondary); margin-bottom: 1rem;"></i>
+            <p>You are not enrolled in any classes yet.</p>
+            <p style="color: var(--text-secondary); font-size: 0.95rem;">Ask your teacher to add you to a class.</p>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

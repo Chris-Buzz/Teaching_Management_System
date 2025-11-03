@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block title %}{{ student.name }} - Attendance History{% endblock %}
+
+{% block content %}
+<div class="history-detail">
+    <div style="margin-bottom: 2rem;">
+        <a href="{{ url_for('view_class', class_id=class_obj.id) }}" style="color: var(--primary-color); text-decoration: none;">
+            <i class="fas fa-arrow-left"></i> Back to {{ class_obj.name }}
+        </a>
+    </div>
+
+    <div style="text-align: center; margin-bottom: 2rem; padding-bottom: 2rem; border-bottom: 2px solid var(--border-color);">
+        <div style="width: 80px; height: 80px; margin: 0 auto 1rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+            <i class="fas fa-user-graduate" style="font-size: 2.5rem; color: white;"></i>
+        </div>
+        <h1 style="margin-bottom: 0.5rem;">{{ student.name }}</h1>
+        <p style="color: var(--text-secondary); margin: 0.25rem 0;">
+            <i class="fas fa-envelope"></i> {{ student.email }}
+        </p>
+        {% if student.student_id %}
+        <p style="color: var(--text-secondary); margin: 0.25rem 0;">
+            <i class="fas fa-id-card"></i> {{ student.student_id }}
+        </p>
+        {% endif %}
+        <p style="color: var(--text-secondary); margin-top: 0.5rem; font-size: 0.95rem;">
+            {{ class_obj.name }} ({{ class_obj.code }})
+        </p>
+    </div>
+
+    <div class="attendance-summary">
+        <h2><i class="fas fa-chart-pie"></i> Attendance Statistics</h2>
+        <div class="summary-stats">
+            <div class="stat-card">
+                <h3>{{ attendance_rate }}%</h3>
+                <p><i class="fas fa-percentage"></i> Attendance Rate</p>
+            </div>
+            <div class="stat-card">
+                <h3>{{ present_count }}</h3>
+                <p><i class="fas fa-check-circle"></i> Present</p>
+            </div>
+            <div class="stat-card">
+                <h3>{{ late_count }}</h3>
+                <p><i class="fas fa-clock"></i> Late</p>
+            </div>
+            <div class="stat-card">
+                <h3>{{ absent_count }}</h3>
+                <p><i class="fas fa-times-circle"></i> Absent</p>
+            </div>
+            <div class="stat-card">
+                <h3>{{ total_sessions }}</h3>
+                <p><i class="fas fa-calendar-alt"></i> Total Sessions</p>
+            </div>
+        </div>
+    </div>
+
+    <h2 style="margin: 2rem 0 1rem;"><i class="fas fa-history"></i> Session History</h2>
+
+    {% if attendance_data %}
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Time</th>
+                    <th>Status</th>
+                    <th>Check-in Time</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in attendance_data %}
+                    <tr>
+                        <td>{{ item.session.date.strftime('%B %d, %Y') }}</td>
+                        <td>{{ item.session.date.strftime('%I:%M %p') }}</td>
+                        <td>
+                            {% if item.status == 'Present' %}
+                                <span class="status-pill status-pill-present">
+                                    <i class="fas fa-check-circle"></i> Present
+                                </span>
+                            {% elif item.status == 'Late' %}
+                                <span class="status-pill status-pill-late">
+                                    <i class="fas fa-clock"></i> Late
+                                </span>
+                            {% else %}
+                                <span class="status-pill status-pill-absent">
+                                    <i class="fas fa-times-circle"></i> Absent
+                                </span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if item.timestamp %}
+                                {{ item.timestamp.strftime('%I:%M %p') }}
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <div class="empty-state">
+            <i class="fas fa-calendar-times" style="font-size: 3rem; color: var(--text-secondary); margin-bottom: 1rem;"></i>
+            <p>No attendance sessions have been held for this class yet.</p>
+        </div>
+    {% endif %}
+
+    <div class="back-link">
+        <a href="{{ url_for('view_class', class_id=class_obj.id) }}">
+            <i class="fas fa-arrow-left"></i> Back to Class
+        </a>
+    </div>
+</div>
+{% endblock %}

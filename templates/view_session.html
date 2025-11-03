@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block title %}Attendance Session - {{ class_obj.name }}{% endblock %}
+
+{% block content %}
+<div class="session-detail">
+    <div class="session-header">
+        <h1>Attendance Session</h1>
+        <p>{{ class_obj.name }} ({{ class_obj.code }})</p>
+        <p class="session-date">{{ session.date.strftime('%B %d, %Y at %I:%M %p') }}</p>
+        {% if session.is_active %}
+            <span class="badge badge-success">Active</span>
+        {% else %}
+            <span class="badge badge-secondary">Closed</span>
+        {% endif %}
+    </div>
+
+    {% if session.is_active %}
+        <div class="qr-section">
+            <h2><i class="fas fa-qrcode"></i> Scan to Check In</h2>
+            <p style="margin-bottom: 1.5rem;">Students should scan this QR code to mark their attendance.</p>
+            <div class="qr-code-container">
+                <img src="{{ url_for('generate_qr', session_id=session.id) }}" alt="QR Code">
+            </div>
+            <p class="qr-url"><i class="fas fa-link"></i> Or visit: {{ request.url_root }}check_in?token={{ session.qr_token }}</p>
+            <form method="POST" action="{{ url_for('close_session', session_id=session.id) }}" onsubmit="return confirm('Close this session? All remaining students will be marked absent.');" style="margin-top: 2rem;">
+                <button type="submit" class="btn btn-danger">
+                    <i class="fas fa-stop-circle"></i> Close Session
+                </button>
+            </form>
+        </div>
+    {% endif %}
+
+    <div class="attendance-summary">
+        <h2><i class="fas fa-chart-bar"></i> Attendance Record</h2>
+        <div class="summary-stats">
+            <div class="stat-card">
+                <h3>{{ records|selectattr('status', 'equalto', 'Present')|list|length }}</h3>
+                <p><i class="fas fa-check-circle"></i> Present</p>
+            </div>
+            <div class="stat-card">
+                <h3>{{ records|selectattr('status', 'equalto', 'Late')|list|length }}</h3>
+                <p><i class="fas fa-clock"></i> Late</p>
+            </div>
+            <div class="stat-card">
+                <h3>{% if session.is_active %}{{ all_students|length - records|length }}{% else %}{{ records|selectattr('status', 'equalto', 'Absent')|list|length }}{% endif %}</h3>
+                <p><i class="fas fa-times-circle"></i> {% if session.is_active %}Waiting{% else %}Absent{% endif %}</p>
+            </div>
+            <div class="stat-card">
+                <h3>{{ all_students|length }}</h3>
+                <p><i class="fas fa-users"></i> Total Students</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="attendance-list">
+        <h3>Student Details</h3>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Student ID</th>
+                    <th>Status</th>
+                    <th>Time</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for student in all_students %}
+                    {% set record = records|selectattr('student_id', 'equalto', student.id)|first %}
+                    <tr>
+                        <td>{{ student.name }}</td>
+                        <td>{{ student.student_id or 'N/A' }}</td>
+                        <td>
+                            {% if record %}
+                                {% if record.status == 'Present' %}
+                                    <span class="status-pill status-pill-present"><i class="fas fa-check-circle"></i> Present</span>
+                                {% elif record.status == 'Late' %}
+                                    <span class="status-pill status-pill-late"><i class="fas fa-clock"></i> Late</span>
+                                {% else %}
+                                    <span class="status-pill status-pill-absent"><i class="fas fa-times-circle"></i> Absent</span>
+                                {% endif %}
+                            {% elif not session.is_active %}
+                                <span class="status-pill status-pill-absent"><i class="fas fa-times-circle"></i> Absent</span>
+                            {% else %}
+                                <span class="badge badge-warning">Waiting</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if record %}
+                                {{ record.timestamp.strftime('%I:%M %p') }}
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <td>
+                            <form method="POST" action="{{ url_for('edit_attendance_record', session_id=session.id) }}" style="display: inline;">
+                                <input type="hidden" name="student_id" value="{{ student.id }}">
+                                <select name="status" onchange="this.form.submit()" class="status-select" {% if session.is_active %}disabled{% endif %}>
+                                    <option value="Present" {% if record and record.status == 'Present' %}selected{% endif %}>Present</option>
+                                    <option value="Late" {% if record and record.status == 'Late' %}selected{% endif %}>Late</option>
+                                    <option value="Absent" {% if not record or record.status == 'Absent' %}selected{% endif %}>Absent</option>
+                                </select>
+                            </form>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="back-link">
+        <a href="{{ url_for('view_class', class_id=class_obj.id) }}">← Back to Class</a>
+    </div>
+</div>
+{% endblock %}
