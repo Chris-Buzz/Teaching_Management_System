@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for, flash, ses
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import secrets
 import qrcode
 import io
@@ -20,7 +20,8 @@ if os.environ.get('VERCEL_ENV') == 'production':
     app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:////tmp/attendance.db')
 else:
     # Development configuration
-    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', secrets.token_hex(16))
+    # Use a fixed secret key for development or get from environment variable
+    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production-12345')
     app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///attendance.db')
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -38,12 +39,24 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(200), nullable=False)
     role = db.Column(db.String(20), nullable=False)  # 'teacher' or 'student'
     student_id = db.Column(db.String(50))  # Only for students
-    
+    reset_token = db.Column(db.String(100), unique=True)
+    reset_token_expiry = db.Column(db.DateTime)
+
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
-    
+
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+
+    def generate_reset_token(self):
+        self.reset_token = secrets.token_urlsafe(32)
+        self.reset_token_expiry = datetime.now(timezone.utc) + timedelta(hours=1)
+        return self.reset_token
+
+    def verify_reset_token(self, token):
+        if self.reset_token == token and self.reset_token_expiry > datetime.now(timezone.utc):
+            return True
+        return False
 
 class Class(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -105,19 +118,20 @@ def index():
 def login():
     if current_user.is_authenticated:
         return redirect(url_for('index'))
-    
+
     if request.method == 'POST':
         email = request.form.get('email')
         password = request.form.get('password')
+        remember = request.form.get('remember', False) == 'on'
         user = User.query.filter_by(email=email).first()
-        
+
         if user and user.check_password(password):
-            login_user(user)
+            login_user(user, remember=remember)
             flash(f'Welcome back, {user.name}!', 'success')
             return redirect(url_for('index'))
         else:
             flash('Invalid email or password', 'danger')
-    
+
     return render_template('login.html')
 
 @app.route('/register', methods=['GET', 'POST'])
@@ -152,6 +166,61 @@ def logout():
     logout_user()
     flash('You have been logged out.', 'info')
     return redirect(url_for('login'))
+
+@app.route('/forgot-password', methods=['GET', 'POST'])
+def forgot_password():
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+
+    if request.method == 'POST':
+        email = request.form.get('email')
+        user = User.query.filter_by(email=email).first()
+
+        if user:
+            token = user.generate_reset_token()
+            db.session.commit()
+
+            # In a real application, you would send an email here
+            # For now, we'll just display the reset link
+            reset_url = url_for('reset_password', token=token, _external=True)
+            flash(f'Password reset link (copy this): {reset_url}', 'info')
+            flash('In production, this would be sent to your email.', 'warning')
+        else:
+            # Don't reveal if email exists or not for security
+            flash('If that email exists, a password reset link has been sent.', 'info')
+
+        return redirect(url_for('login'))
+
+    return render_template('forgot_password.html')
+
+@app.route('/reset-password/<token>', methods=['GET', 'POST'])
+def reset_password(token):
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+
+    user = User.query.filter_by(reset_token=token).first()
+
+    if not user or not user.verify_reset_token(token):
+        flash('Invalid or expired reset link.', 'danger')
+        return redirect(url_for('login'))
+
+    if request.method == 'POST':
+        password = request.form.get('password')
+        confirm_password = request.form.get('confirm_password')
+
+        if password != confirm_password:
+            flash('Passwords do not match.', 'danger')
+            return render_template('reset_password.html', token=token)
+
+        user.set_password(password)
+        user.reset_token = None
+        user.reset_token_expiry = None
+        db.session.commit()
+
+        flash('Your password has been reset successfully! Please log in.', 'success')
+        return redirect(url_for('login'))
+
+    return render_template('reset_password.html', token=token)
 
 @app.route('/teacher/dashboard')
 @login_required

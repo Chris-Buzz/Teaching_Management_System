@@ -8,7 +8,7 @@ def init_database():
     with app.app_context():
         # Create all tables
         db.create_all()
-        print("✓ Database tables created successfully!")
+        print("Database tables created successfully!")
         print("\nThe database is ready for use.")
         print("No sample data has been added.")
         print("\nYou can now run the application with: python app.py")

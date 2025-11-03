@@ -9,7 +9,10 @@
       "Bash(git commit:*)",
       "Bash(git branch:*)",
       "Bash(git remote add:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(python init_db.py:*)",
+      "Bash(python migrate_db.py:*)",
+      "Bash(python reset_db.py:*)"
     ],
     "deny": [],
     "ask": []
