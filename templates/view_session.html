@@ -65,6 +65,7 @@
                 <tr>
                     <th>Name</th>
                     <th>Student ID</th>
+                    <th>Email</th>
                     <th>Status</th>
                     <th>Time</th>
                     <th>Actions</th>
@@ -72,43 +73,91 @@
             </thead>
             <tbody>
                 {% for student in all_students %}
-                    {% set record = records|selectattr('student_id', 'equalto', student.id)|first %}
-                    <tr>
-                        <td>{{ student.name }}</td>
-                        <td>{{ student.student_id or 'N/A' }}</td>
-                        <td>
-                            {% if record %}
-                                {% if record.status == 'Present' %}
-                                    <span class="status-pill status-pill-present"><i class="fas fa-check-circle"></i> Present</span>
-                                {% elif record.status == 'Late' %}
-                                    <span class="status-pill status-pill-late"><i class="fas fa-clock"></i> Late</span>
+                    {% if student.is_pending %}
+                        {% set record = records|selectattr('student_email', 'equalto', student.email)|first %}
+                        <tr>
+                            <td>
+                                {% if student.name %}
+                                    {{ student.name }}
                                 {% else %}
-                                    <span class="status-pill status-pill-absent"><i class="fas fa-times-circle"></i> Absent</span>
+                                    <em style="color: var(--text-secondary);">Not Registered</em>
                                 {% endif %}
-                            {% elif not session.is_active %}
-                                <span class="status-pill status-pill-absent"><i class="fas fa-times-circle"></i> Absent</span>
-                            {% else %}
-                                <span class="badge badge-warning">Waiting</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            {% if record %}
-                                {{ record.timestamp.strftime('%I:%M %p') }}
-                            {% else %}
-                                -
-                            {% endif %}
-                        </td>
-                        <td>
-                            <form method="POST" action="{{ url_for('edit_attendance_record', session_id=session.id) }}" style="display: inline;">
-                                <input type="hidden" name="student_id" value="{{ student.id }}">
-                                <select name="status" onchange="this.form.submit()" class="status-select" {% if session.is_active %}disabled{% endif %}>
-                                    <option value="Present" {% if record and record.status == 'Present' %}selected{% endif %}>Present</option>
-                                    <option value="Late" {% if record and record.status == 'Late' %}selected{% endif %}>Late</option>
-                                    <option value="Absent" {% if not record or record.status == 'Absent' %}selected{% endif %}>Absent</option>
-                                </select>
-                            </form>
-                        </td>
-                    </tr>
+                            </td>
+                            <td>N/A</td>
+                            <td>{{ student.email }}</td>
+                            <td>
+                                {% if record %}
+                                    {% if record.status == 'Present' %}
+                                        <span class="status-pill status-pill-present"><i class="fas fa-check-circle"></i> Present</span>
+                                    {% elif record.status == 'Late' %}
+                                        <span class="status-pill status-pill-late"><i class="fas fa-clock"></i> Late</span>
+                                    {% else %}
+                                        <span class="status-pill status-pill-absent"><i class="fas fa-times-circle"></i> Absent</span>
+                                    {% endif %}
+                                {% elif not session.is_active %}
+                                    <span class="status-pill status-pill-absent"><i class="fas fa-times-circle"></i> Absent</span>
+                                {% else %}
+                                    <span class="badge badge-warning">Waiting</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if record %}
+                                    {{ record.timestamp.strftime('%I:%M %p') }}
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            <td>
+                                <form method="POST" action="{{ url_for('edit_attendance_record', session_id=session.id) }}" style="display: inline;">
+                                    <input type="hidden" name="student_email" value="{{ student.email }}">
+                                    <select name="status" onchange="this.form.submit()" class="status-select" {% if session.is_active %}disabled{% endif %}>
+                                        <option value="Present" {% if record and record.status == 'Present' %}selected{% endif %}>Present</option>
+                                        <option value="Late" {% if record and record.status == 'Late' %}selected{% endif %}>Late</option>
+                                        <option value="Absent" {% if not record or record.status == 'Absent' %}selected{% endif %}>Absent</option>
+                                    </select>
+                                </form>
+                            </td>
+                        </tr>
+                    {% else %}
+                        {% set record = records|selectattr('student_id', 'equalto', student.user.id)|first %}
+                        <tr>
+                            <td>{{ student.user.name }}</td>
+                            <td>{{ student.user.student_id or 'N/A' }}</td>
+                            <td>{{ student.user.email }}</td>
+                            <td>
+                                {% if record %}
+                                    {% if record.status == 'Present' %}
+                                        <span class="status-pill status-pill-present"><i class="fas fa-check-circle"></i> Present</span>
+                                    {% elif record.status == 'Late' %}
+                                        <span class="status-pill status-pill-late"><i class="fas fa-clock"></i> Late</span>
+                                    {% else %}
+                                        <span class="status-pill status-pill-absent"><i class="fas fa-times-circle"></i> Absent</span>
+                                    {% endif %}
+                                {% elif not session.is_active %}
+                                    <span class="status-pill status-pill-absent"><i class="fas fa-times-circle"></i> Absent</span>
+                                {% else %}
+                                    <span class="badge badge-warning">Waiting</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if record %}
+                                    {{ record.timestamp.strftime('%I:%M %p') }}
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            <td>
+                                <form method="POST" action="{{ url_for('edit_attendance_record', session_id=session.id) }}" style="display: inline;">
+                                    <input type="hidden" name="student_id" value="{{ student.user.id }}">
+                                    <select name="status" onchange="this.form.submit()" class="status-select" {% if session.is_active %}disabled{% endif %}>
+                                        <option value="Present" {% if record and record.status == 'Present' %}selected{% endif %}>Present</option>
+                                        <option value="Late" {% if record and record.status == 'Late' %}selected{% endif %}>Late</option>
+                                        <option value="Absent" {% if not record or record.status == 'Absent' %}selected{% endif %}>Absent</option>
+                                    </select>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endif %}
                 {% endfor %}
             </tbody>
         </table>
@@ -118,4 +167,130 @@
         <a href="{{ url_for('view_class', class_id=class_obj.id) }}">← Back to Class</a>
     </div>
 </div>
+
+{% if session.is_active %}
+<script>
+// Auto-refresh the page every 5 seconds when session is active
+let autoRefreshInterval;
+let refreshCountdown = 5;
+let isPaused = false;
+
+// Create refresh indicator
+const refreshIndicator = document.createElement('div');
+refreshIndicator.style.cssText = `
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 12px 20px;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    font-size: 14px;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+`;
+refreshIndicator.innerHTML = `
+    <i class="fas fa-sync-alt" style="animation: spin 2s linear infinite;"></i>
+    <span id="refreshText">Auto-refresh in <strong id="countdown">5</strong>s</span>
+    <button id="pauseBtn" style="
+        background: rgba(255,255,255,0.2);
+        border: none;
+        color: white;
+        padding: 4px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 12px;
+    ">
+        <i class="fas fa-pause"></i> Pause
+    </button>
+`;
+document.body.appendChild(refreshIndicator);
+
+// Add spin animation
+const style = document.createElement('style');
+style.textContent = `
+    @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+`;
+document.head.appendChild(style);
+
+// Countdown and refresh logic
+function startCountdown() {
+    const countdownEl = document.getElementById('countdown');
+    const refreshTextEl = document.getElementById('refreshText');
+
+    autoRefreshInterval = setInterval(() => {
+        if (!isPaused) {
+            refreshCountdown--;
+            countdownEl.textContent = refreshCountdown;
+
+            if (refreshCountdown <= 0) {
+                refreshTextEl.innerHTML = '<strong>Refreshing...</strong>';
+                setTimeout(() => {
+                    window.location.reload();
+                }, 500);
+            }
+        }
+    }, 1000);
+}
+
+// Pause/Resume functionality
+document.getElementById('pauseBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    isPaused = !isPaused;
+    const pauseBtn = document.getElementById('pauseBtn');
+    const refreshTextEl = document.getElementById('refreshText');
+
+    if (isPaused) {
+        pauseBtn.innerHTML = '<i class="fas fa-play"></i> Resume';
+        refreshTextEl.innerHTML = '<strong>Auto-refresh paused</strong>';
+        refreshIndicator.style.background = 'linear-gradient(135deg, #6b7280 0%, #4b5563 100%)';
+    } else {
+        pauseBtn.innerHTML = '<i class="fas fa-pause"></i> Pause';
+        refreshCountdown = 5;
+        refreshTextEl.innerHTML = 'Auto-refresh in <strong id="countdown">5</strong>s';
+        refreshIndicator.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+    }
+});
+
+// Click to refresh immediately
+refreshIndicator.addEventListener('click', (e) => {
+    if (e.target.id !== 'pauseBtn' && !isPaused) {
+        window.location.reload();
+    }
+});
+
+// Start countdown
+startCountdown();
+
+// Show a subtle notification when new attendance is detected (visual feedback)
+const originalTitle = document.title;
+let titleInterval;
+
+// Flash the title to get teacher's attention when page is in background
+function flashTitle() {
+    let isOriginal = true;
+    titleInterval = setInterval(() => {
+        document.title = isOriginal ? '🔔 New Check-in!' : originalTitle;
+        isOriginal = !isOriginal;
+    }, 1000);
+}
+
+// Stop flashing when page is focused
+window.addEventListener('focus', () => {
+    if (titleInterval) {
+        clearInterval(titleInterval);
+        document.title = originalTitle;
+    }
+});
+</script>
+{% endif %}
+
 {% endblock %}

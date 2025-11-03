@@ -35,6 +35,20 @@ login_manager.init_app(app)
 login_manager.login_view = 'login'
 
 # Database Models
+class PendingStudent(db.Model):
+    """Students added to classes by teachers before they register"""
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(100), nullable=False)
+    name = db.Column(db.String(100))  # Optional name provided by teacher
+    added_by_teacher_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    date_added = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Make email lowercase when setting
+    def __init__(self, **kwargs):
+        if 'email' in kwargs:
+            kwargs['email'] = kwargs['email'].lower()
+        super(PendingStudent, self).__init__(**kwargs)
+
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
@@ -72,9 +86,18 @@ class Class(db.Model):
 class Enrollment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     class_id = db.Column(db.Integer, db.ForeignKey('class.id'), nullable=False)
-    student_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    student_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)  # Nullable for pending students
+    student_email = db.Column(db.String(100), nullable=True)  # For pending students who haven't registered
+    student_name = db.Column(db.String(100), nullable=True)  # Optional name for pending students
+    enrollment_date = db.Column(db.DateTime, default=datetime.utcnow)
     class_ref = db.relationship('Class', backref='enrollments')
-    student = db.relationship('User', backref='enrollments')
+    student = db.relationship('User', backref='enrollments', foreign_keys=[student_id])
+    
+    # Make email lowercase when setting
+    def __init__(self, **kwargs):
+        if 'student_email' in kwargs and kwargs['student_email']:
+            kwargs['student_email'] = kwargs['student_email'].lower()
+        super(Enrollment, self).__init__(**kwargs)
 
 class AttendanceSession(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -87,11 +110,18 @@ class AttendanceSession(db.Model):
 class AttendanceRecord(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     session_id = db.Column(db.Integer, db.ForeignKey('attendance_session.id'), nullable=False)
-    student_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    student_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)  # Nullable for pending students
+    student_email = db.Column(db.String(100), nullable=True)  # For pending students
     status = db.Column(db.String(20), nullable=False)  # 'Present', 'Late', or 'Absent'
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     session = db.relationship('AttendanceSession', backref='records')
-    student = db.relationship('User', backref='attendance_records')
+    student = db.relationship('User', backref='attendance_records', foreign_keys=[student_id])
+    
+    # Make email lowercase when setting
+    def __init__(self, **kwargs):
+        if 'student_email' in kwargs and kwargs['student_email']:
+            kwargs['student_email'] = kwargs['student_email'].lower()
+        super(AttendanceRecord, self).__init__(**kwargs)
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -158,12 +188,47 @@ def register():
         user = User(name=name, email=email, role=role, student_id=student_id)
         user.set_password(password)
         db.session.add(user)
+        db.session.flush()  # Get the user ID without committing
+        
+        # If registering as a student, check for pending enrollments and attendance
+        if role == 'student':
+            # Find all enrollments with this email (pending students)
+            pending_enrollments = Enrollment.query.filter(
+                db.func.lower(Enrollment.student_email) == email,
+                Enrollment.student_id.is_(None)
+            ).all()
+            
+            classes_connected = []
+            for enrollment in pending_enrollments:
+                enrollment.student_id = user.id
+                enrollment.student_email = None  # Clear email since we have student_id now
+                classes_connected.append(enrollment.class_ref.name)
+            
+            # Update attendance records with this email to link to the new user
+            pending_records = AttendanceRecord.query.filter(
+                db.func.lower(AttendanceRecord.student_email) == email,
+                AttendanceRecord.student_id.is_(None)
+            ).all()
+            
+            for record in pending_records:
+                record.student_id = user.id
+                record.student_email = None
+            
+            # Delete pending student record if exists
+            PendingStudent.query.filter(db.func.lower(PendingStudent.email) == email).delete()
+        
         db.session.commit()
         
-        flash('Registration successful! Please log in.', 'success')
+        if role == 'student' and classes_connected:
+            flash(f'Registration successful! You have been automatically enrolled in: {", ".join(classes_connected)}', 'success')
+        else:
+            flash('Registration successful! Please log in.', 'success')
         return redirect(url_for('login'))
     
-    return render_template('register.html')
+    # Check if there's a suggested email from query params (for pending students)
+    suggested_email = request.args.get('email', '')
+    
+    return render_template('register.html', suggested_email=suggested_email)
 
 @app.route('/logout')
 @login_required
@@ -262,10 +327,34 @@ def view_class(class_id):
         return redirect(url_for('teacher_dashboard'))
     
     enrollments = Enrollment.query.filter_by(class_id=class_id).all()
-    students = [e.student for e in enrollments]
+    
+    # Separate registered students and pending students
+    students = []
+    pending_students = []
+    
+    for e in enrollments:
+        if e.student_id:
+            # Registered student
+            students.append({
+                'enrollment': e,
+                'user': e.student,
+                'is_pending': False
+            })
+        else:
+            # Pending student (only has email)
+            pending_students.append({
+                'enrollment': e,
+                'email': e.student_email,
+                'name': e.student_name,  # May be None
+                'is_pending': True
+            })
+    
+    # Combine them
+    all_students = students + pending_students
+    
     sessions = AttendanceSession.query.filter_by(class_id=class_id).order_by(AttendanceSession.date.desc()).all()
     
-    return render_template('view_class.html', class_obj=class_obj, students=students, sessions=sessions)
+    return render_template('view_class.html', class_obj=class_obj, students=all_students, sessions=sessions)
 
 @app.route('/teacher/class/<int:class_id>/edit', methods=['GET', 'POST'])
 @login_required
@@ -320,26 +409,53 @@ def add_student(class_id):
     
     if request.method == 'POST':
         email = request.form.get('email').strip().lower()
+        name = request.form.get('name', '').strip()  # Optional name
+        
+        # Check if already enrolled (either as registered or pending student)
+        existing = Enrollment.query.filter(
+            Enrollment.class_id == class_id,
+            db.or_(
+                db.func.lower(Enrollment.student_email) == email,
+                Enrollment.student_id.in_(
+                    db.session.query(User.id).filter(db.func.lower(User.email) == email)
+                )
+            )
+        ).first()
+        
+        if existing:
+            flash('This email is already enrolled in this class.', 'warning')
+            return redirect(url_for('view_class', class_id=class_id))
+        
+        # Check if student is registered
         student = User.query.filter(
             db.func.lower(User.email) == email,
             User.role == 'student'
         ).first()
         
-        if not student:
-            flash('Student not found. They may need to register first.', 'warning')
-            return redirect(url_for('add_student', class_id=class_id))
+        if student:
+            # Student is registered, create enrollment with student_id
+            enrollment = Enrollment(class_id=class_id, student_id=student.id)
+            db.session.add(enrollment)
+            db.session.commit()
+            flash(f'{student.name} added to class!', 'success')
+        else:
+            # Student not registered yet, create pending enrollment with email and optional name
+            enrollment = Enrollment(class_id=class_id, student_email=email, student_name=name if name else None)
+            db.session.add(enrollment)
+            
+            # Also create a pending student record for tracking
+            pending = PendingStudent.query.filter(db.func.lower(PendingStudent.email) == email).first()
+            if not pending:
+                pending = PendingStudent(email=email, name=name if name else None, added_by_teacher_id=current_user.id)
+                db.session.add(pending)
+            elif name and not pending.name:
+                # Update name if provided and not already set
+                pending.name = name
+            
+            db.session.commit()
+            display_name = name if name else email
+            flash(f'{display_name} added to class. They can check in with this email and will be automatically enrolled when they register.', 'info')
         
-        # Check if already enrolled
-        existing = Enrollment.query.filter_by(class_id=class_id, student_id=student.id).first()
-        if existing:
-            flash('Student is already enrolled in this class.', 'warning')
-            return redirect(url_for('view_class', class_id=class_id))
-        
-        enrollment = Enrollment(class_id=class_id, student_id=student.id)
-        db.session.add(enrollment)
-        db.session.commit()
-        
-        flash(f'{student.name} added to class!', 'success')
         return redirect(url_for('view_class', class_id=class_id))
     
     return render_template('add_student.html', class_obj=class_obj)
@@ -358,6 +474,28 @@ def remove_student(class_id, student_id):
         db.session.delete(enrollment)
         db.session.commit()
         flash('Student removed from class.', 'success')
+    
+    return redirect(url_for('view_class', class_id=class_id))
+
+@app.route('/teacher/class/<int:class_id>/remove_pending_student', methods=['POST'])
+@login_required
+@teacher_required
+def remove_pending_student(class_id):
+    class_obj = Class.query.get_or_404(class_id)
+    if class_obj.teacher_id != current_user.id:
+        flash('Access denied', 'danger')
+        return redirect(url_for('teacher_dashboard'))
+    
+    email = request.form.get('email')
+    enrollment = Enrollment.query.filter(
+        Enrollment.class_id == class_id,
+        db.func.lower(Enrollment.student_email) == email.lower()
+    ).first()
+    
+    if enrollment:
+        db.session.delete(enrollment)
+        db.session.commit()
+        flash('Pending student removed from class.', 'success')
     
     return redirect(url_for('view_class', class_id=class_id))
 
@@ -397,10 +535,36 @@ def view_session(session_id):
         return redirect(url_for('teacher_dashboard'))
     
     records = AttendanceRecord.query.filter_by(session_id=session_id).all()
-    present_students = {r.student_id for r in records if r.status == 'Present'}
+    present_students = set()
+    
+    for r in records:
+        if r.status == 'Present':
+            if r.student_id:
+                present_students.add(r.student_id)
+            else:
+                present_students.add(r.student_email)
     
     enrollments = Enrollment.query.filter_by(class_id=class_obj.id).all()
-    all_students = [e.student for e in enrollments]
+    
+    # Build list of all students (registered and pending)
+    all_students = []
+    for e in enrollments:
+        if e.student_id:
+            all_students.append({
+                'user': e.student,
+                'email': e.student.email,
+                'name': e.student.name,
+                'is_pending': False,
+                'enrollment': e
+            })
+        else:
+            all_students.append({
+                'user': None,
+                'email': e.student_email,
+                'name': e.student_name,  # May be None
+                'is_pending': True,
+                'enrollment': e
+            })
     
     return render_template('view_session.html', session=session_obj, class_obj=class_obj, 
                          records=records, all_students=all_students, present_students=present_students)
@@ -419,22 +583,41 @@ def close_session(session_id):
     # Mark session as inactive
     session_obj.is_active = False
     
-    # Get all enrolled students
+    # Get all enrolled students (registered and pending)
     enrollments = Enrollment.query.filter_by(class_id=class_obj.id).all()
     
     # Mark absent students
     for enrollment in enrollments:
-        existing_record = AttendanceRecord.query.filter_by(
-            session_id=session_id, student_id=enrollment.student_id
-        ).first()
+        existing_record = None
         
-        if not existing_record:
-            absent_record = AttendanceRecord(
-                session_id=session_id,
-                student_id=enrollment.student_id,
-                status='Absent'
-            )
-            db.session.add(absent_record)
+        if enrollment.student_id:
+            # Registered student
+            existing_record = AttendanceRecord.query.filter_by(
+                session_id=session_id, 
+                student_id=enrollment.student_id
+            ).first()
+            
+            if not existing_record:
+                absent_record = AttendanceRecord(
+                    session_id=session_id,
+                    student_id=enrollment.student_id,
+                    status='Absent'
+                )
+                db.session.add(absent_record)
+        else:
+            # Pending student (email only)
+            existing_record = AttendanceRecord.query.filter(
+                AttendanceRecord.session_id == session_id,
+                db.func.lower(AttendanceRecord.student_email) == enrollment.student_email.lower()
+            ).first()
+            
+            if not existing_record:
+                absent_record = AttendanceRecord(
+                    session_id=session_id,
+                    student_email=enrollment.student_email,
+                    status='Absent'
+                )
+                db.session.add(absent_record)
     
     db.session.commit()
     flash('Session closed. All remaining students marked absent.', 'success')
@@ -535,47 +718,73 @@ def check_in():
     # If user is not logged in, show a form to enter their email
     if request.method == 'POST':
         email = request.form.get('email').strip().lower()
-        # Case-insensitive email search
+        
+        # Check if this email is enrolled in the class (either as registered or pending student)
+        enrollment = Enrollment.query.filter(
+            Enrollment.class_id == session_obj.class_id,
+            db.or_(
+                db.func.lower(Enrollment.student_email) == email,
+                Enrollment.student_id.in_(
+                    db.session.query(User.id).filter(
+                        db.func.lower(User.email) == email,
+                        User.role == 'student'
+                    )
+                )
+            )
+        ).first()
+
+        if not enrollment:
+            flash('This email is not enrolled in this class. Please contact your teacher.', 'danger')
+            return render_template('check_in.html', session=session_obj, token=token)
+        
+        # Check if student is registered
         student = User.query.filter(
             db.func.lower(User.email) == email,
             User.role == 'student'
         ).first()
 
-        if not student:
-            flash('Student not found. Please check your email or register first.', 'danger')
-            return render_template('check_in.html', session=session_obj, token=token)
-
-        # Check if student is enrolled
-        enrollment = Enrollment.query.filter_by(
-            class_id=session_obj.class_id,
-            student_id=student.id
-        ).first()
-
-        if not enrollment:
-            flash('You are not enrolled in this class', 'danger')
-            return render_template('check_in.html', session=session_obj, token=token)
-
-        # Check if already checked in
-        existing_record = AttendanceRecord.query.filter_by(
-            session_id=session_obj.id,
-            student_id=student.id
-        ).first()
+        # Check if already checked in (check both student_id and email)
+        existing_record = None
+        if student:
+            existing_record = AttendanceRecord.query.filter_by(
+                session_id=session_obj.id,
+                student_id=student.id
+            ).first()
+        else:
+            existing_record = AttendanceRecord.query.filter(
+                AttendanceRecord.session_id == session_obj.id,
+                db.func.lower(AttendanceRecord.student_email) == email
+            ).first()
 
         if existing_record:
             flash('You have already checked in for this session', 'info')
-            return render_template('check_in.html', session=session_obj, token=token)
+            return render_template('check_in.html', session=session_obj, token=token, success=True)
 
         # Create attendance record
-        record = AttendanceRecord(
-            session_id=session_obj.id,
-            student_id=student.id,
-            status='Present'
-        )
+        if student:
+            # Registered student
+            record = AttendanceRecord(
+                session_id=session_obj.id,
+                student_id=student.id,
+                status='Present'
+            )
+        else:
+            # Pending student (not registered yet)
+            record = AttendanceRecord(
+                session_id=session_obj.id,
+                student_email=email,
+                status='Present'
+            )
+        
         db.session.add(record)
         db.session.commit()
 
-        flash(f'✓ Attendance marked for {session_obj.class_ref.name}!', 'success')
-        return render_template('check_in.html', session=session_obj, token=token, success=True)
+        if student:
+            flash(f'✓ Attendance marked for {session_obj.class_ref.name}!', 'success')
+        else:
+            flash(f'✓ Attendance marked for {session_obj.class_ref.name}! Register with this email to track your full attendance history.', 'success')
+        
+        return render_template('check_in.html', session=session_obj, token=token, success=True, suggest_register=not student, email=email)
 
     return render_template('check_in.html', session=session_obj, token=token)
 
@@ -655,15 +864,32 @@ def edit_attendance_record(session_id):
         return redirect(url_for('teacher_dashboard'))
     
     student_id = request.form.get('student_id', type=int)
+    student_email = request.form.get('student_email')
     new_status = request.form.get('status')
     
-    record = AttendanceRecord.query.filter_by(session_id=session_id, student_id=student_id).first()
+    record = None
     
-    if record:
-        record.status = new_status
-    else:
-        record = AttendanceRecord(session_id=session_id, student_id=student_id, status=new_status)
-        db.session.add(record)
+    if student_id:
+        # Registered student
+        record = AttendanceRecord.query.filter_by(session_id=session_id, student_id=student_id).first()
+        
+        if record:
+            record.status = new_status
+        else:
+            record = AttendanceRecord(session_id=session_id, student_id=student_id, status=new_status)
+            db.session.add(record)
+    elif student_email:
+        # Pending student
+        record = AttendanceRecord.query.filter(
+            AttendanceRecord.session_id == session_id,
+            db.func.lower(AttendanceRecord.student_email) == student_email.lower()
+        ).first()
+        
+        if record:
+            record.status = new_status
+        else:
+            record = AttendanceRecord(session_id=session_id, student_email=student_email, status=new_status)
+            db.session.add(record)
     
     db.session.commit()
     flash('Attendance record updated', 'success')
@@ -741,7 +967,7 @@ def export_attendance(class_id):
     writer = csv.writer(output)
     
     # Header
-    writer.writerow(['Student Name', 'Student ID', 'Email', 'Date', 'Status'])
+    writer.writerow(['Student Name', 'Student ID', 'Email', 'Registration Status', 'Date', 'Status'])
     
     # Get all sessions
     sessions = AttendanceSession.query.filter_by(class_id=class_id).order_by(AttendanceSession.date).all()
@@ -749,14 +975,27 @@ def export_attendance(class_id):
     for session in sessions:
         records = AttendanceRecord.query.filter_by(session_id=session.id).all()
         for record in records:
-            student = record.student
-            writer.writerow([
-                student.name,
-                student.student_id or 'N/A',
-                student.email,
-                session.date.strftime('%Y-%m-%d %H:%M'),
-                record.status
-            ])
+            if record.student_id:
+                # Registered student
+                student = record.student
+                writer.writerow([
+                    student.name,
+                    student.student_id or 'N/A',
+                    student.email,
+                    'Registered',
+                    session.date.strftime('%Y-%m-%d %H:%M'),
+                    record.status
+                ])
+            else:
+                # Pending student
+                writer.writerow([
+                    'Not Registered',
+                    'N/A',
+                    record.student_email,
+                    'Pending',
+                    session.date.strftime('%Y-%m-%d %H:%M'),
+                    record.status
+                ])
     
     # Prepare response
     output.seek(0)

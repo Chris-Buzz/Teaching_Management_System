@@ -7,6 +7,11 @@
     <div class="auth-card">
         <h1><i class="fas fa-user-plus"></i> Create Account</h1>
         <p style="text-align: center; color: var(--text-secondary); margin-bottom: 2rem;">Join our teaching management platform</p>
+        {% if suggested_email %}
+        <div class="alert alert-info" style="margin-bottom: 1.5rem; padding: 1rem; background: #e3f2fd; border-left: 4px solid #2196f3; border-radius: 4px;">
+            <i class="fas fa-info-circle"></i> Register with <strong>{{ suggested_email }}</strong> to automatically connect to your classes!
+        </div>
+        {% endif %}
         <form method="POST" action="{{ url_for('register') }}">
             <div class="form-group">
                 <label for="name"><i class="fas fa-user"></i> Full Name</label>
@@ -14,7 +19,7 @@
             </div>
             <div class="form-group">
                 <label for="email"><i class="fas fa-envelope"></i> Email Address</label>
-                <input type="email" id="email" name="email" placeholder="Enter your email" required>
+                <input type="email" id="email" name="email" placeholder="Enter your email" value="{{ suggested_email }}" required>
             </div>
             <div class="form-group">
                 <label for="password"><i class="fas fa-lock"></i> Password</label>
@@ -23,7 +28,7 @@
             <div class="form-group">
                 <label for="role"><i class="fas fa-user-tag"></i> I am a:</label>
                 <select id="role" name="role" required onchange="toggleStudentId()">
-                    <option value="student">Student</option>
+                    <option value="student" {% if suggested_email %}selected{% endif %}>Student</option>
                     <option value="teacher">Teacher</option>
                 </select>
             </div>

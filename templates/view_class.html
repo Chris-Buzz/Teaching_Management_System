@@ -58,27 +58,50 @@
                         <th>Name</th>
                         <th>Student ID</th>
                         <th>Email</th>
+                        <th>Status</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for student in students %}
                         <tr>
-                            <td>{{ student.name }}</td>
-                            <td>{{ student.student_id or 'N/A' }}</td>
-                            <td>{{ student.email }}</td>
-                            <td>
-                                <div style="display: flex; gap: 0.5rem; align-items: center;">
-                                    <a href="{{ url_for('student_attendance_history', class_id=class_obj.id, student_id=student.id) }}" class="btn btn-primary btn-sm">
-                                        <i class="fas fa-history"></i> View History
-                                    </a>
-                                    <form method="POST" action="{{ url_for('remove_student', class_id=class_obj.id, student_id=student.id) }}" style="margin: 0;" onsubmit="return confirm('Remove {{ student.name }} from this class?');">
+                            {% if student.is_pending %}
+                                <td>
+                                    {% if student.name %}
+                                        {{ student.name }}
+                                    {% else %}
+                                        <em style="color: var(--text-secondary);">Not Registered</em>
+                                    {% endif %}
+                                </td>
+                                <td>N/A</td>
+                                <td>{{ student.email }}</td>
+                                <td><span class="badge badge-warning">Pending</span></td>
+                                <td>
+                                    <form method="POST" action="{{ url_for('remove_pending_student', class_id=class_obj.id) }}" style="margin: 0;" onsubmit="return confirm('Remove {{ student.name or student.email }} from this class?');">
+                                        <input type="hidden" name="email" value="{{ student.email }}">
                                         <button type="submit" class="btn btn-danger btn-sm">
                                             <i class="fas fa-user-minus"></i> Remove
                                         </button>
                                     </form>
-                                </div>
-                            </td>
+                                </td>
+                            {% else %}
+                                <td>{{ student.user.name }}</td>
+                                <td>{{ student.user.student_id or 'N/A' }}</td>
+                                <td>{{ student.user.email }}</td>
+                                <td><span class="badge badge-success">Registered</span></td>
+                                <td>
+                                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                        <a href="{{ url_for('student_attendance_history', class_id=class_obj.id, student_id=student.user.id) }}" class="btn btn-primary btn-sm">
+                                            <i class="fas fa-history"></i> View History
+                                        </a>
+                                        <form method="POST" action="{{ url_for('remove_student', class_id=class_obj.id, student_id=student.user.id) }}" style="margin: 0;" onsubmit="return confirm('Remove {{ student.user.name }} from this class?');">
+                                            <button type="submit" class="btn btn-danger btn-sm">
+                                                <i class="fas fa-user-minus"></i> Remove
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
+                            {% endif %}
                         </tr>
                     {% endfor %}
                 </tbody>

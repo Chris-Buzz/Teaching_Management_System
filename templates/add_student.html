@@ -5,13 +5,20 @@
 {% block content %}
 <div class="form-container">
     <h1><i class="fas fa-user-plus"></i> Add Student to {{ class_obj.name }}</h1>
-    <p style="text-align: center; color: var(--text-secondary); margin-bottom: 2rem;">Enter the email address of a registered student to enroll them in this class.</p>
+    <p style="text-align: center; color: var(--text-secondary); margin-bottom: 2rem;">
+        Enter the student's email address. They don't need to be registered yet!
+    </p>
 
     <form method="POST" action="{{ url_for('add_student', class_id=class_obj.id) }}">
         <div class="form-group">
+            <label for="name"><i class="fas fa-user"></i> Student Name (Optional)</label>
+            <input type="text" id="name" name="name" placeholder="e.g., John Smith" autofocus>
+            <small><i class="fas fa-info-circle"></i> Helps you identify the student before they register.</small>
+        </div>
+        <div class="form-group">
             <label for="email"><i class="fas fa-envelope"></i> Student Email</label>
-            <input type="email" id="email" name="email" placeholder="student@example.com" required autofocus>
-            <small><i class="fas fa-info-circle"></i> The student must have already registered an account.</small>
+            <input type="email" id="email" name="email" placeholder="student@example.com" required>
+            <small><i class="fas fa-info-circle"></i> If the student hasn't registered yet, they can still check in with this email and will be automatically enrolled when they create an account.</small>
         </div>
         <div class="form-actions">
             <button type="submit" class="btn btn-primary">
