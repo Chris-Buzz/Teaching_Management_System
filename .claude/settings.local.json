@@ -12,7 +12,9 @@
       "Bash(git push:*)",
       "Bash(python init_db.py:*)",
       "Bash(python migrate_db.py:*)",
-      "Bash(python reset_db.py:*)"
+      "Bash(python reset_db.py:*)",
+      "Bash(python:*)",
+      "Bash(pip install:*)"
     ],
     "deny": [],
     "ask": []
