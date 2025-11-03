@@ -16,17 +16,16 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# Configuration for production and development
-if os.environ.get('VERCEL_ENV') == 'production':
-    # Production configuration
-    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', secrets.token_hex(32))
-    # Use PostgreSQL or another production database
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:////tmp/attendance.db')
-else:
-    # Development configuration
-    # Use a fixed secret key for development or get from environment variable
-    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production-12345')
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///attendance.db')
+# Configuration - Always use environment variables
+# SECRET_KEY is required in .env file
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY')
+if not app.config['SECRET_KEY']:
+    raise ValueError("SECRET_KEY environment variable is required! Set it in your .env file.")
+
+# DATABASE_URL is required in .env file (Supabase PostgreSQL)
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
+if not app.config['SQLALCHEMY_DATABASE_URI']:
+    raise ValueError("DATABASE_URL environment variable is required! Set it in your .env file with your Supabase connection string.")
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 

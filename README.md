@@ -39,6 +39,7 @@ A modern, professional web-based attendance management system built with Flask. 
 ### Prerequisites
 - Python 3.8 or higher
 - pip (Python package manager)
+- Supabase account (free tier works great!)
 
 ### Installation
 
@@ -47,28 +48,44 @@ A modern, professional web-based attendance management system built with Flask. 
    cd flask-attendance-app
    ```
 
-2. **Create a virtual environment** (recommended)
+2. **Set up Supabase Database**
+   - Create a free account at https://supabase.com
+   - Create a new project
+   - Get your PostgreSQL connection string from Project Settings > Database
+   - Save your database password (you'll need it in step 4)
+
+3. **Create a virtual environment** (recommended)
    ```bash
    python -m venv venv
-   
+
    # On Windows:
    venv\Scripts\activate
-   
+
    # On macOS/Linux:
    source venv/bin/activate
    ```
 
-3. **Install dependencies**
+4. **Configure environment variables**
+   - Copy `.env.example` to `.env`
+   - Generate a SECRET_KEY: `python -c "import secrets; print(secrets.token_hex(32))"`
+   - Add your Supabase connection string with your password to `DATABASE_URL`
+
+5. **Install dependencies**
    ```bash
    pip install -r requirements.txt
    ```
 
-4. **Run the application**
+6. **Initialize the database**
+   ```bash
+   python init_db.py
+   ```
+
+7. **Run the application**
    ```bash
    python app.py
    ```
 
-5. **Open your browser**
+8. **Open your browser**
    Navigate to `http://127.0.0.1:5000`
 
 ## 📱 How to Use
