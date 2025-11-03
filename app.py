@@ -368,21 +368,35 @@ def close_session(session_id):
 @teacher_required
 def generate_qr(session_id):
     session_obj = AttendanceSession.query.get_or_404(session_id)
-    
+
     # Generate QR code
     url = request.url_root + 'check_in?token=' + session_obj.qr_token
-    qr = qrcode.QRCode(version=1, box_size=10, border=5)
+
+    # Use qrcode with PIL/Pillow for Vercel compatibility
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=4,
+    )
     qr.add_data(url)
     qr.make(fit=True)
-    
+
+    # Create image with explicit PIL backend
     img = qr.make_image(fill_color="black", back_color="white")
-    
-    # Save to bytes
+
+    # Save to BytesIO with explicit format
     img_io = io.BytesIO()
-    img.save(img_io, 'PNG')
+    img.save(img_io, format='PNG')
     img_io.seek(0)
-    
-    return send_file(img_io, mimetype='image/png')
+
+    # Return with proper headers for Vercel
+    return send_file(
+        img_io,
+        mimetype='image/png',
+        as_attachment=False,
+        download_name=f'qr_session_{session_id}.png'
+    )
 
 @app.route('/check_in', methods=['GET', 'POST'])
 def check_in():

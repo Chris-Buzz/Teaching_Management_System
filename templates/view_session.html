@@ -20,9 +20,14 @@
             <h2><i class="fas fa-qrcode"></i> Scan to Check In</h2>
             <p style="margin-bottom: 1.5rem;">Students should scan this QR code to mark their attendance.</p>
             <div class="qr-code-container">
-                <img src="{{ url_for('generate_qr', session_id=session.id) }}" alt="QR Code">
+                <!-- Primary QR Code from app -->
+                <img
+                    src="{{ url_for('generate_qr', session_id=session.id) }}"
+                    alt="QR Code"
+                    onerror="this.onerror=null; this.src='https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={{ request.url_root }}check_in?token={{ session.qr_token }}'; this.style.padding='10px';"
+                    style="max-width: 300px; height: auto;">
             </div>
-            <p class="qr-url"><i class="fas fa-link"></i> Or visit: {{ request.url_root }}check_in?token={{ session.qr_token }}</p>
+            <p class="qr-url"><i class="fas fa-link"></i> Or visit: <a href="{{ request.url_root }}check_in?token={{ session.qr_token }}" target="_blank" style="color: var(--primary-color); word-break: break-all;">{{ request.url_root }}check_in?token={{ session.qr_token }}</a></p>
             <form method="POST" action="{{ url_for('close_session', session_id=session.id) }}" onsubmit="return confirm('Close this session? All remaining students will be marked absent.');" style="margin-top: 2rem;">
                 <button type="submit" class="btn btn-danger">
                     <i class="fas fa-stop-circle"></i> Close Session
