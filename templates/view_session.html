@@ -29,6 +29,7 @@
             </div>
             <p class="qr-url"><i class="fas fa-link"></i> Or visit: <a href="{{ request.url_root }}check_in?token={{ session.qr_token }}" target="_blank" style="color: var(--primary-color); word-break: break-all;">{{ request.url_root }}check_in?token={{ session.qr_token }}</a></p>
             <form method="POST" action="{{ url_for('close_session', session_id=session.id) }}" onsubmit="return confirm('Close this session? All remaining students will be marked absent.');" style="margin-top: 2rem;">
+                {{ csrf_token() }}
                 <button type="submit" class="btn btn-danger">
                     <i class="fas fa-stop-circle"></i> Close Session
                 </button>
@@ -109,6 +110,7 @@
                             </td>
                             <td>
                                 <form method="POST" action="{{ url_for('edit_attendance_record', session_id=session.id) }}" style="display: inline;">
+                                    {{ csrf_token() }}
                                     <input type="hidden" name="student_email" value="{{ student.email }}">
                                     <select name="status" onchange="this.form.submit()" class="status-select" {% if session.is_active %}disabled{% endif %}>
                                         <option value="Present" {% if record and record.status == 'Present' %}selected{% endif %}>Present</option>
@@ -148,6 +150,7 @@
                             </td>
                             <td>
                                 <form method="POST" action="{{ url_for('edit_attendance_record', session_id=session.id) }}" style="display: inline;">
+                                    {{ csrf_token() }}
                                     <input type="hidden" name="student_id" value="{{ student.user.id }}">
                                     <select name="status" onchange="this.form.submit()" class="status-select" {% if session.is_active %}disabled{% endif %}>
                                         <option value="Present" {% if record and record.status == 'Present' %}selected{% endif %}>Present</option>

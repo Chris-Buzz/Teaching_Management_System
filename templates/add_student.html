@@ -10,6 +10,7 @@
     </p>
 
     <form method="POST" action="{{ url_for('add_student', class_id=class_obj.id) }}">
+        {{ csrf_token() }}
         <div class="form-group">
             <label for="name"><i class="fas fa-user"></i> Student Name (Optional)</label>
             <input type="text" id="name" name="name" placeholder="e.g., John Smith" autofocus>
