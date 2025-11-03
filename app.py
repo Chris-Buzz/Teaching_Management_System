@@ -1,6 +1,10 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from flask_wtf.csrf import CSRFProtect
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from flask_talisman import Talisman
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta, timezone
 import secrets
@@ -9,6 +13,7 @@ import io
 import csv
 from functools import wraps
 import os
+import re
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -29,10 +34,50 @@ if not app.config['SQLALCHEMY_DATABASE_URI']:
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
+# Security configurations
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get('FLASK_ENV') != 'development'  # HTTPS only in production
+app.config['SESSION_COOKIE_HTTPONLY'] = True  # Prevent JavaScript access
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # CSRF protection
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)  # Session timeout
+app.config['WTF_CSRF_TIME_LIMIT'] = None  # CSRF tokens don't expire with session
+
 db = SQLAlchemy(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
+
+# Initialize CSRF protection
+csrf = CSRFProtect(app)
+
+# Initialize rate limiter
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri="memory://"  # Use Redis in production for distributed systems
+)
+
+# Initialize security headers (only enforce HTTPS in production)
+if os.environ.get('FLASK_ENV') != 'development':
+    Talisman(app,
+        force_https=True,
+        strict_transport_security=True,
+        content_security_policy={
+            'default-src': "'self'",
+            'script-src': ["'self'", "'unsafe-inline'", "cdnjs.cloudflare.com"],
+            'style-src': ["'self'", "'unsafe-inline'", "cdnjs.cloudflare.com"],
+            'img-src': ["'self'", "data:", "https:"],
+            'font-src': ["'self'", "cdnjs.cloudflare.com"]
+        }
+    )
+else:
+    # Add basic security headers even in development
+    @app.after_request
+    def set_security_headers(response):
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+        response.headers['X-XSS-Protection'] = '1; mode=block'
+        return response
 
 # Database Models
 class PendingStudent(db.Model):
@@ -127,6 +172,50 @@ class AttendanceRecord(db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
+# Validation helper functions
+def validate_password(password):
+    """Validate password strength"""
+    if not password or len(password) < 8:
+        return False, "Password must be at least 8 characters long"
+    if not re.search(r'[A-Z]', password):
+        return False, "Password must contain at least one uppercase letter"
+    if not re.search(r'[a-z]', password):
+        return False, "Password must contain at least one lowercase letter"
+    if not re.search(r'\d', password):
+        return False, "Password must contain at least one number"
+    return True, "Password is valid"
+
+def validate_email(email):
+    """Validate email format"""
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    if not email or not re.match(pattern, email):
+        return False, "Invalid email format"
+    return True, ""
+
+def validate_name(name):
+    """Validate name field"""
+    if not name or len(name.strip()) == 0:
+        return False, "Name is required"
+    if len(name) > 100:
+        return False, "Name is too long (maximum 100 characters)"
+    return True, ""
+
+def validate_class_code(code):
+    """Validate class code format"""
+    if not code or len(code.strip()) == 0:
+        return False, "Class code is required"
+    if len(code) > 20:
+        return False, "Class code is too long (maximum 20 characters)"
+    if not re.match(r'^[A-Za-z0-9_-]+$', code):
+        return False, "Class code can only contain letters, numbers, hyphens, and underscores"
+    return True, ""
+
+def validate_text_length(text, field_name, max_length=500):
+    """Validate text field length"""
+    if text and len(text) > max_length:
+        return False, f"{field_name} is too long (maximum {max_length} characters)"
+    return True, ""
+
 # Decorator for teacher-only routes
 def teacher_required(f):
     @wraps(f)
@@ -148,14 +237,22 @@ def index():
     return redirect(url_for('login'))
 
 @app.route('/login', methods=['GET', 'POST'])
+@limiter.limit("5 per minute")  # Rate limit: max 5 login attempts per minute
 def login():
     if current_user.is_authenticated:
         return redirect(url_for('index'))
 
     if request.method == 'POST':
-        email = request.form.get('email').strip().lower()
-        password = request.form.get('password')
+        email = request.form.get('email', '').strip().lower()
+        password = request.form.get('password', '')
         remember = request.form.get('remember', False) == 'on'
+
+        # Validate email format
+        is_valid, msg = validate_email(email)
+        if not is_valid:
+            flash(msg, 'danger')
+            return render_template('login.html')
+
         # Case-insensitive email search
         user = User.query.filter(db.func.lower(User.email) == email).first()
 
@@ -169,16 +266,45 @@ def login():
     return render_template('login.html')
 
 @app.route('/register', methods=['GET', 'POST'])
+@limiter.limit("3 per hour")  # Rate limit: max 3 registrations per hour per IP
 def register():
     if current_user.is_authenticated:
         return redirect(url_for('index'))
-    
+
     if request.method == 'POST':
-        name = request.form.get('name')
-        email = request.form.get('email').strip().lower()  # Normalize email to lowercase
-        password = request.form.get('password')
-        role = request.form.get('role')
-        student_id = request.form.get('student_id')
+        name = request.form.get('name', '')
+        email = request.form.get('email', '').strip().lower()  # Normalize email to lowercase
+        password = request.form.get('password', '')
+        role = request.form.get('role', '')
+        student_id = request.form.get('student_id', '')
+
+        # Validate name
+        is_valid, msg = validate_name(name)
+        if not is_valid:
+            flash(msg, 'danger')
+            return redirect(url_for('register'))
+
+        # Validate email format
+        is_valid, msg = validate_email(email)
+        if not is_valid:
+            flash(msg, 'danger')
+            return redirect(url_for('register'))
+
+        # Validate password strength
+        is_valid, msg = validate_password(password)
+        if not is_valid:
+            flash(msg, 'danger')
+            return redirect(url_for('register'))
+
+        # Validate role
+        if role not in ['teacher', 'student']:
+            flash('Invalid role selected', 'danger')
+            return redirect(url_for('register'))
+
+        # Validate student_id length if provided
+        if student_id and len(student_id) > 50:
+            flash('Student ID is too long (maximum 50 characters)', 'danger')
+            return redirect(url_for('register'))
 
         # Check if email already exists (case-insensitive)
         if User.query.filter(db.func.lower(User.email) == email).first():
@@ -238,12 +364,20 @@ def logout():
     return redirect(url_for('login'))
 
 @app.route('/forgot-password', methods=['GET', 'POST'])
+@limiter.limit("3 per hour")  # Rate limit: max 3 password reset requests per hour
 def forgot_password():
     if current_user.is_authenticated:
         return redirect(url_for('index'))
 
     if request.method == 'POST':
-        email = request.form.get('email').strip().lower()
+        email = request.form.get('email', '').strip().lower()
+
+        # Validate email format
+        is_valid, msg = validate_email(email)
+        if not is_valid:
+            flash(msg, 'danger')
+            return render_template('forgot_password.html')
+
         user = User.query.filter(db.func.lower(User.email) == email).first()
 
         if user:
@@ -264,6 +398,7 @@ def forgot_password():
     return render_template('forgot_password.html')
 
 @app.route('/reset-password/<token>', methods=['GET', 'POST'])
+@limiter.limit("5 per hour")  # Rate limit: max 5 password reset attempts per hour
 def reset_password(token):
     if current_user.is_authenticated:
         return redirect(url_for('index'))
@@ -275,11 +410,17 @@ def reset_password(token):
         return redirect(url_for('login'))
 
     if request.method == 'POST':
-        password = request.form.get('password')
-        confirm_password = request.form.get('confirm_password')
+        password = request.form.get('password', '')
+        confirm_password = request.form.get('confirm_password', '')
 
         if password != confirm_password:
             flash('Passwords do not match.', 'danger')
+            return render_template('reset_password.html', token=token)
+
+        # Validate password strength
+        is_valid, msg = validate_password(password)
+        if not is_valid:
+            flash(msg, 'danger')
             return render_template('reset_password.html', token=token)
 
         user.set_password(password)
@@ -304,17 +445,35 @@ def teacher_dashboard():
 @teacher_required
 def add_class():
     if request.method == 'POST':
-        name = request.form.get('name')
-        code = request.form.get('code')
-        description = request.form.get('description')
-        
+        name = request.form.get('name', '')
+        code = request.form.get('code', '')
+        description = request.form.get('description', '')
+
+        # Validate class name
+        is_valid, msg = validate_name(name)
+        if not is_valid:
+            flash(msg, 'danger')
+            return redirect(url_for('add_class'))
+
+        # Validate class code
+        is_valid, msg = validate_class_code(code)
+        if not is_valid:
+            flash(msg, 'danger')
+            return redirect(url_for('add_class'))
+
+        # Validate description length
+        is_valid, msg = validate_text_length(description, "Description", max_length=1000)
+        if not is_valid:
+            flash(msg, 'danger')
+            return redirect(url_for('add_class'))
+
         new_class = Class(name=name, code=code, description=description, teacher_id=current_user.id)
         db.session.add(new_class)
         db.session.commit()
-        
+
         flash(f'Class "{name}" added successfully!', 'success')
         return redirect(url_for('teacher_dashboard'))
-    
+
     return render_template('add_class.html')
 
 @app.route('/teacher/class/<int:class_id>')
@@ -1080,6 +1239,24 @@ def export_attendance(class_id):
         download_name=f'{class_obj.code}_attendance.csv'
     )
 
+# Error handlers
+@app.errorhandler(404)
+def not_found_error(error):
+    return render_template('error.html', error_code=404, error_message="Page not found"), 404
+
+@app.errorhandler(403)
+def forbidden_error(error):
+    return render_template('error.html', error_code=403, error_message="Access denied"), 403
+
+@app.errorhandler(500)
+def internal_error(error):
+    db.session.rollback()  # Rollback any failed database transactions
+    return render_template('error.html', error_code=500, error_message="Internal server error"), 500
+
+@app.errorhandler(429)
+def ratelimit_handler(error):
+    return render_template('error.html', error_code=429, error_message="Too many requests. Please try again later."), 429
+
 # Initialize database tables
 with app.app_context():
     db.create_all()
@@ -1088,4 +1265,6 @@ with app.app_context():
 app = app
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    # Only enable debug mode in development
+    debug_mode = os.environ.get('FLASK_ENV') == 'development'
+    app.run(debug=debug_mode)
