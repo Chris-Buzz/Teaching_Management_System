@@ -7,6 +7,7 @@ from flask_limiter.util import get_remote_address
 from flask_talisman import Talisman
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta, timezone
+import pytz
 import secrets
 import qrcode
 import io
@@ -18,6 +19,13 @@ from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
+
+# Eastern timezone
+EASTERN = pytz.timezone('US/Eastern')
+
+def get_eastern_time():
+    """Get current time in Eastern timezone"""
+    return datetime.now(EASTERN)
 
 app = Flask(__name__)
 
@@ -86,7 +94,7 @@ class PendingStudent(db.Model):
     email = db.Column(db.String(100), nullable=False)
     name = db.Column(db.String(100))  # Optional name provided by teacher
     added_by_teacher_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    date_added = db.Column(db.DateTime, default=datetime.utcnow)
+    date_added = db.Column(db.DateTime, default=get_eastern_time)
     
     # Make email lowercase when setting
     def __init__(self, **kwargs):
@@ -112,11 +120,11 @@ class User(UserMixin, db.Model):
 
     def generate_reset_token(self):
         self.reset_token = secrets.token_urlsafe(32)
-        self.reset_token_expiry = datetime.now(timezone.utc) + timedelta(hours=1)
+        self.reset_token_expiry = get_eastern_time() + timedelta(hours=1)
         return self.reset_token
 
     def verify_reset_token(self, token):
-        if self.reset_token == token and self.reset_token_expiry > datetime.now(timezone.utc):
+        if self.reset_token == token and self.reset_token_expiry > get_eastern_time():
             return True
         return False
 
@@ -134,7 +142,7 @@ class Enrollment(db.Model):
     student_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)  # Nullable for pending students
     student_email = db.Column(db.String(100), nullable=True)  # For pending students who haven't registered
     student_name = db.Column(db.String(100), nullable=True)  # Optional name for pending students
-    enrollment_date = db.Column(db.DateTime, default=datetime.utcnow)
+    enrollment_date = db.Column(db.DateTime, default=get_eastern_time)
     class_ref = db.relationship('Class', backref='enrollments')
     student = db.relationship('User', backref='enrollments', foreign_keys=[student_id])
     
@@ -147,7 +155,7 @@ class Enrollment(db.Model):
 class AttendanceSession(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     class_id = db.Column(db.Integer, db.ForeignKey('class.id'), nullable=False)
-    date = db.Column(db.DateTime, default=datetime.utcnow)
+    date = db.Column(db.DateTime, default=get_eastern_time)
     qr_token = db.Column(db.String(100), unique=True, nullable=False)
     is_active = db.Column(db.Boolean, default=True)
     class_ref = db.relationship('Class', backref='sessions')
@@ -158,7 +166,7 @@ class AttendanceRecord(db.Model):
     student_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)  # Nullable for pending students
     student_email = db.Column(db.String(100), nullable=True)  # For pending students
     status = db.Column(db.String(20), nullable=False)  # 'Present', 'Late', or 'Absent'
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    timestamp = db.Column(db.DateTime, default=get_eastern_time)
     session = db.relationship('AttendanceSession', backref='records')
     student = db.relationship('User', backref='attendance_records', foreign_keys=[student_id])
     
