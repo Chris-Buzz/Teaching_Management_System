@@ -950,7 +950,81 @@ def student_attendance_history(class_id, student_id):
                          present_count=present_count,
                          late_count=late_count,
                          absent_count=absent_count,
-                         attendance_rate=round(attendance_rate, 1))
+                         attendance_rate=round(attendance_rate, 1),
+                         is_pending=False)
+
+@app.route('/teacher/class/<int:class_id>/pending_student/<email>/history')
+@login_required
+@teacher_required
+def pending_student_attendance_history(class_id, email):
+    class_obj = Class.query.get_or_404(class_id)
+
+    if class_obj.teacher_id != current_user.id:
+        flash('Access denied', 'danger')
+        return redirect(url_for('teacher_dashboard'))
+
+    # Decode email from URL
+    email = email.lower()
+
+    # Check if pending student is enrolled
+    enrollment = Enrollment.query.filter(
+        Enrollment.class_id == class_id,
+        db.func.lower(Enrollment.student_email) == email
+    ).first()
+
+    if not enrollment:
+        flash('This email is not enrolled in this class', 'danger')
+        return redirect(url_for('view_class', class_id=class_id))
+
+    # Get all sessions for this class
+    sessions = AttendanceSession.query.filter_by(class_id=class_id, is_active=False).order_by(AttendanceSession.date.desc()).all()
+
+    # Get attendance records for this pending student
+    attendance_data = []
+    present_count = 0
+    late_count = 0
+    absent_count = 0
+
+    for session in sessions:
+        record = AttendanceRecord.query.filter(
+            AttendanceRecord.session_id == session.id,
+            db.func.lower(AttendanceRecord.student_email) == email
+        ).first()
+        status = record.status if record else 'Absent'
+
+        if status == 'Present':
+            present_count += 1
+        elif status == 'Late':
+            late_count += 1
+        else:
+            absent_count += 1
+
+        attendance_data.append({
+            'session': session,
+            'status': status,
+            'timestamp': record.timestamp if record else None
+        })
+
+    total_sessions = len(sessions)
+    attendance_rate = ((present_count + late_count) / total_sessions * 100) if total_sessions > 0 else 0
+
+    # Create a student-like object for the template
+    student_info = {
+        'name': enrollment.student_name if enrollment.student_name else 'Not Registered',
+        'email': email,
+        'student_id': None
+    }
+
+    return render_template('teacher_student_history.html',
+                         class_obj=class_obj,
+                         student=student_info,
+                         attendance_data=attendance_data,
+                         total_sessions=total_sessions,
+                         present_count=present_count,
+                         late_count=late_count,
+                         absent_count=absent_count,
+                         attendance_rate=round(attendance_rate, 1),
+                         is_pending=True)
 
 @app.route('/teacher/class/<int:class_id>/export')
 @login_required

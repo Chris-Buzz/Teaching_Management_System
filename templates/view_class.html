@@ -77,12 +77,17 @@
                                 <td>{{ student.email }}</td>
                                 <td><span class="badge badge-warning">Pending</span></td>
                                 <td>
-                                    <form method="POST" action="{{ url_for('remove_pending_student', class_id=class_obj.id) }}" style="margin: 0;" onsubmit="return confirm('Remove {{ student.name or student.email }} from this class?');">
-                                        <input type="hidden" name="email" value="{{ student.email }}">
-                                        <button type="submit" class="btn btn-danger btn-sm">
-                                            <i class="fas fa-user-minus"></i> Remove
-                                        </button>
-                                    </form>
+                                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                        <a href="{{ url_for('pending_student_attendance_history', class_id=class_obj.id, email=student.email) }}" class="btn btn-primary btn-sm">
+                                            <i class="fas fa-history"></i> View History
+                                        </a>
+                                        <form method="POST" action="{{ url_for('remove_pending_student', class_id=class_obj.id) }}" style="margin: 0;" onsubmit="return confirm('Remove {{ student.name or student.email }} from this class?');">
+                                            <input type="hidden" name="email" value="{{ student.email }}">
+                                            <button type="submit" class="btn btn-danger btn-sm">
+                                                <i class="fas fa-user-minus"></i> Remove
+                                            </button>
+                                        </form>
+                                    </div>
                                 </td>
                             {% else %}
                                 <td>{{ student.user.name }}</td>

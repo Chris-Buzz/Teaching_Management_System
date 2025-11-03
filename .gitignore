@@ -49,3 +49,7 @@ Thumbs.db
 
 # Vercel
 .vercel
+
+# Database utility scripts
+fix_pending_student.py
+verify_pending_student.py
