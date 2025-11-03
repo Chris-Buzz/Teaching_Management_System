@@ -123,10 +123,11 @@ def login():
         return redirect(url_for('index'))
 
     if request.method == 'POST':
-        email = request.form.get('email')
+        email = request.form.get('email').strip().lower()
         password = request.form.get('password')
         remember = request.form.get('remember', False) == 'on'
-        user = User.query.filter_by(email=email).first()
+        # Case-insensitive email search
+        user = User.query.filter(db.func.lower(User.email) == email).first()
 
         if user and user.check_password(password):
             login_user(user, remember=remember)
@@ -144,15 +145,16 @@ def register():
     
     if request.method == 'POST':
         name = request.form.get('name')
-        email = request.form.get('email')
+        email = request.form.get('email').strip().lower()  # Normalize email to lowercase
         password = request.form.get('password')
         role = request.form.get('role')
         student_id = request.form.get('student_id')
-        
-        if User.query.filter_by(email=email).first():
+
+        # Check if email already exists (case-insensitive)
+        if User.query.filter(db.func.lower(User.email) == email).first():
             flash('Email already registered', 'danger')
             return redirect(url_for('register'))
-        
+
         user = User(name=name, email=email, role=role, student_id=student_id)
         user.set_password(password)
         db.session.add(user)
@@ -176,8 +178,8 @@ def forgot_password():
         return redirect(url_for('index'))
 
     if request.method == 'POST':
-        email = request.form.get('email')
-        user = User.query.filter_by(email=email).first()
+        email = request.form.get('email').strip().lower()
+        user = User.query.filter(db.func.lower(User.email) == email).first()
 
         if user:
             token = user.generate_reset_token()
@@ -317,8 +319,11 @@ def add_student(class_id):
         return redirect(url_for('teacher_dashboard'))
     
     if request.method == 'POST':
-        email = request.form.get('email')
-        student = User.query.filter_by(email=email, role='student').first()
+        email = request.form.get('email').strip().lower()
+        student = User.query.filter(
+            db.func.lower(User.email) == email,
+            User.role == 'student'
+        ).first()
         
         if not student:
             flash('Student not found. They may need to register first.', 'warning')
@@ -529,8 +534,12 @@ def check_in():
 
     # If user is not logged in, show a form to enter their email
     if request.method == 'POST':
-        email = request.form.get('email')
-        student = User.query.filter_by(email=email, role='student').first()
+        email = request.form.get('email').strip().lower()
+        # Case-insensitive email search
+        student = User.query.filter(
+            db.func.lower(User.email) == email,
+            User.role == 'student'
+        ).first()
 
         if not student:
             flash('Student not found. Please check your email or register first.', 'danger')
