@@ -681,9 +681,26 @@ def start_session(class_id):
         flash('There is already an active session for this class.', 'warning')
         return redirect(url_for('view_session', session_id=active_session.id))
     
-    # Create new session
+    # Get client timestamp if provided
+    client_timestamp_str = request.form.get('client_timestamp', '')
+    client_timestamp = None
+    if client_timestamp_str:
+        try:
+            # Parse ISO format timestamp from client
+            client_timestamp = datetime.fromisoformat(client_timestamp_str.replace('Z', '+00:00'))
+            # Convert to Eastern timezone
+            client_timestamp = client_timestamp.astimezone(EASTERN)
+        except (ValueError, AttributeError):
+            # If parsing fails, will use server time
+            pass
+    
+    # Create new session with client timestamp
     token = secrets.token_urlsafe(16)
-    session_obj = AttendanceSession(class_id=class_id, qr_token=token)
+    session_obj = AttendanceSession(
+        class_id=class_id, 
+        qr_token=token,
+        date=client_timestamp if client_timestamp else get_eastern_time()
+    )
     db.session.add(session_obj)
     db.session.commit()
     
@@ -753,7 +770,19 @@ def close_session(session_id):
     # Get all enrolled students (registered and pending)
     enrollments = Enrollment.query.filter_by(class_id=class_obj.id).all()
     
-    # Mark absent students
+    # Mark absent students with client-side timestamp
+    client_timestamp_str = request.form.get('client_timestamp', '')
+    client_timestamp = None
+    if client_timestamp_str:
+        try:
+            # Parse ISO format timestamp from client
+            client_timestamp = datetime.fromisoformat(client_timestamp_str.replace('Z', '+00:00'))
+            # Convert to Eastern timezone
+            client_timestamp = client_timestamp.astimezone(EASTERN)
+        except (ValueError, AttributeError):
+            # If parsing fails, will use server time
+            pass
+    
     for enrollment in enrollments:
         existing_record = None
         
@@ -768,7 +797,8 @@ def close_session(session_id):
                 absent_record = AttendanceRecord(
                     session_id=session_id,
                     student_id=enrollment.student_id,
-                    status='Absent'
+                    status='Absent',
+                    timestamp=client_timestamp if client_timestamp else get_eastern_time()
                 )
                 db.session.add(absent_record)
         else:
@@ -782,7 +812,8 @@ def close_session(session_id):
                 absent_record = AttendanceRecord(
                     session_id=session_id,
                     student_email=enrollment.student_email,
-                    status='Absent'
+                    status='Absent',
+                    timestamp=client_timestamp if client_timestamp else get_eastern_time()
                 )
                 db.session.add(absent_record)
     

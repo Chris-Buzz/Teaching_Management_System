@@ -14,8 +14,9 @@
         <div style="width: 100%; display: flex; flex-direction: column; gap: 1rem;">
             <!-- Primary Actions -->
             <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-                <form method="POST" action="{{ url_for('start_session', class_id=class_obj.id) }}" style="flex: 1; min-width: 200px;">
+                <form method="POST" action="{{ url_for('start_session', class_id=class_obj.id) }}" style="flex: 1; min-width: 200px;" id="startSessionForm">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="client_timestamp" id="start_timestamp" value="">
                     <button type="submit" class="btn btn-success" style="width: 100%;">
                         <i class="fas fa-play-circle"></i> Start Attendance Session
                     </button>
@@ -154,8 +155,9 @@
         {% else %}
             <div class="empty-state">
                 <p>No attendance sessions yet.</p>
-                <form method="POST" action="{{ url_for('start_session', class_id=class_obj.id) }}">
+                <form method="POST" action="{{ url_for('start_session', class_id=class_obj.id) }}" id="startFirstSessionForm">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="client_timestamp" id="start_first_timestamp" value="">
                     <button type="submit" class="btn btn-success">Start First Session</button>
                 </form>
             </div>
@@ -181,5 +183,24 @@ function showTab(tabName) {
     document.getElementById(tabName + '-tab').classList.add('active');
     event.target.classList.add('active');
 }
+
+// Capture client-side timestamp when starting a session
+document.addEventListener('DOMContentLoaded', function() {
+    const startSessionForm = document.getElementById('startSessionForm');
+    if (startSessionForm) {
+        startSessionForm.addEventListener('submit', function() {
+            const now = new Date();
+            document.getElementById('start_timestamp').value = now.toISOString();
+        });
+    }
+    
+    const startFirstSessionForm = document.getElementById('startFirstSessionForm');
+    if (startFirstSessionForm) {
+        startFirstSessionForm.addEventListener('submit', function() {
+            const now = new Date();
+            document.getElementById('start_first_timestamp').value = now.toISOString();
+        });
+    }
+});
 </script>
 {% endblock %}

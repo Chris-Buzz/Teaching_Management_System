@@ -28,8 +28,9 @@
                     style="max-width: 300px; height: auto;">
             </div>
             <p class="qr-url"><i class="fas fa-link"></i> Or visit: <a href="{{ request.url_root }}check_in?token={{ session.qr_token }}" target="_blank" style="color: var(--primary-color); word-break: break-all;">{{ request.url_root }}check_in?token={{ session.qr_token }}</a></p>
-            <form method="POST" action="{{ url_for('close_session', session_id=session.id) }}" onsubmit="return confirm('Close this session? All remaining students will be marked absent.');" style="margin-top: 2rem;">
+            <form method="POST" action="{{ url_for('close_session', session_id=session.id) }}" onsubmit="return confirm('Close this session? All remaining students will be marked absent.');" style="margin-top: 2rem;" id="closeSessionForm">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="client_timestamp" id="close_timestamp" value="">
                 <button type="submit" class="btn btn-danger">
                     <i class="fas fa-stop-circle"></i> Close Session
                 </button>
@@ -291,6 +292,17 @@ window.addEventListener('focus', () => {
     if (titleInterval) {
         clearInterval(titleInterval);
         document.title = originalTitle;
+    }
+});
+
+// Capture client-side timestamp when closing session
+document.addEventListener('DOMContentLoaded', function() {
+    const closeSessionForm = document.getElementById('closeSessionForm');
+    if (closeSessionForm) {
+        closeSessionForm.addEventListener('submit', function() {
+            const now = new Date();
+            document.getElementById('close_timestamp').value = now.toISOString();
+        });
     }
 });
 </script>
