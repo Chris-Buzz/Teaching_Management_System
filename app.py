@@ -885,6 +885,19 @@ def check_in():
     # If user is not logged in, show a form to enter their email
     if request.method == 'POST':
         email = request.form.get('email').strip().lower()
+        client_timestamp_str = request.form.get('client_timestamp', '')
+        
+        # Parse client timestamp if provided
+        client_timestamp = None
+        if client_timestamp_str:
+            try:
+                # Parse ISO format timestamp from client
+                client_timestamp = datetime.fromisoformat(client_timestamp_str.replace('Z', '+00:00'))
+                # Convert to Eastern timezone
+                client_timestamp = client_timestamp.astimezone(EASTERN)
+            except (ValueError, AttributeError):
+                # If parsing fails, will use server time
+                pass
         
         # Check if this email is enrolled in the class (either as registered or pending student)
         enrollment = Enrollment.query.filter(
@@ -927,20 +940,22 @@ def check_in():
             flash('You have already checked in for this session', 'info')
             return render_template('check_in.html', session=session_obj, token=token, success=True)
 
-        # Create attendance record
+        # Create attendance record with client timestamp
         if student:
             # Registered student
             record = AttendanceRecord(
                 session_id=session_obj.id,
                 student_id=student.id,
-                status='Present'
+                status='Present',
+                timestamp=client_timestamp if client_timestamp else get_eastern_time()
             )
         else:
             # Pending student (not registered yet)
             record = AttendanceRecord(
                 session_id=session_obj.id,
                 student_email=email,
-                status='Present'
+                status='Present',
+                timestamp=client_timestamp if client_timestamp else get_eastern_time()
             )
         
         db.session.add(record)
