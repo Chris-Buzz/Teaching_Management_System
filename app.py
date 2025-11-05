@@ -274,7 +274,7 @@ def login():
     return render_template('login.html')
 
 @app.route('/register', methods=['GET', 'POST'])
-@limiter.limit("3 per hour")  # Rate limit: max 3 registrations per hour per IP
+@limiter.limit("15 per hour")  # Rate limit: max 15 registrations per hour per IP (reasonable for legitimate users)
 def register():
     if current_user.is_authenticated:
         return redirect(url_for('index'))
@@ -686,10 +686,12 @@ def start_session(class_id):
     client_timestamp = None
     if client_timestamp_str:
         try:
-            # Parse ISO format timestamp from client
-            client_timestamp = datetime.fromisoformat(client_timestamp_str.replace('Z', '+00:00'))
-            # Convert to Eastern timezone
-            client_timestamp = client_timestamp.astimezone(EASTERN)
+            # Parse ISO format timestamp from client (it's in UTC from toISOString())
+            utc_dt = datetime.fromisoformat(client_timestamp_str.replace('Z', '+00:00'))
+            # Convert UTC to Eastern timezone
+            eastern_dt = utc_dt.astimezone(EASTERN)
+            # Remove timezone info to store as naive datetime in database
+            client_timestamp = eastern_dt.replace(tzinfo=None)
         except (ValueError, AttributeError):
             # If parsing fails, will use server time
             pass
@@ -775,10 +777,12 @@ def close_session(session_id):
     client_timestamp = None
     if client_timestamp_str:
         try:
-            # Parse ISO format timestamp from client
-            client_timestamp = datetime.fromisoformat(client_timestamp_str.replace('Z', '+00:00'))
-            # Convert to Eastern timezone
-            client_timestamp = client_timestamp.astimezone(EASTERN)
+            # Parse ISO format timestamp from client (it's in UTC from toISOString())
+            utc_dt = datetime.fromisoformat(client_timestamp_str.replace('Z', '+00:00'))
+            # Convert UTC to Eastern timezone
+            eastern_dt = utc_dt.astimezone(EASTERN)
+            # Remove timezone info to store as naive datetime in database
+            client_timestamp = eastern_dt.replace(tzinfo=None)
         except (ValueError, AttributeError):
             # If parsing fails, will use server time
             pass
@@ -922,10 +926,12 @@ def check_in():
         client_timestamp = None
         if client_timestamp_str:
             try:
-                # Parse ISO format timestamp from client
-                client_timestamp = datetime.fromisoformat(client_timestamp_str.replace('Z', '+00:00'))
-                # Convert to Eastern timezone
-                client_timestamp = client_timestamp.astimezone(EASTERN)
+                # Parse ISO format timestamp from client (it's in UTC from toISOString())
+                utc_dt = datetime.fromisoformat(client_timestamp_str.replace('Z', '+00:00'))
+                # Convert UTC to Eastern timezone
+                eastern_dt = utc_dt.astimezone(EASTERN)
+                # Remove timezone info to store as naive datetime in database
+                client_timestamp = eastern_dt.replace(tzinfo=None)
             except (ValueError, AttributeError):
                 # If parsing fails, will use server time
                 pass

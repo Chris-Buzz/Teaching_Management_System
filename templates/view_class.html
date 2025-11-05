@@ -190,6 +190,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (startSessionForm) {
         startSessionForm.addEventListener('submit', function() {
             const now = new Date();
+            // Send as ISO string with timezone offset
             document.getElementById('start_timestamp').value = now.toISOString();
         });
     }
@@ -198,6 +199,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (startFirstSessionForm) {
         startFirstSessionForm.addEventListener('submit', function() {
             const now = new Date();
+            // Send as ISO string with timezone offset
             document.getElementById('start_first_timestamp').value = now.toISOString();
         });
     }
