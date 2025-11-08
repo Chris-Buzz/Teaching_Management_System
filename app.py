@@ -36,12 +36,24 @@ app = Flask(__name__)
 # SECRET_KEY is required in .env file
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY')
 if not app.config['SECRET_KEY']:
-    raise ValueError("SECRET_KEY environment variable is required! Set it in your .env file.")
+    # Generate a temporary key for testing only (NOT for production)
+    if os.environ.get('FLASK_ENV') == 'production':
+        raise ValueError("❌ DEPLOYMENT ERROR: SECRET_KEY environment variable is required!\n"
+                        "Please set SECRET_KEY in your deployment platform's environment variables.\n"
+                        "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\"")
+    else:
+        app.config['SECRET_KEY'] = 'dev-key-not-for-production'
 
 # DATABASE_URL is required in .env file (Supabase PostgreSQL)
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
 if not app.config['SQLALCHEMY_DATABASE_URI']:
-    raise ValueError("DATABASE_URL environment variable is required! Set it in your .env file with your Supabase connection string.")
+    if os.environ.get('FLASK_ENV') == 'production':
+        raise ValueError("❌ DEPLOYMENT ERROR: DATABASE_URL environment variable is required!\n"
+                        "Please set DATABASE_URL in your deployment platform's environment variables.\n"
+                        "Use Supabase Connection Pooling URL (port 6543, not 5432).")
+    else:
+        # For development, use a dummy value (will fail if app tries to connect to DB)
+        app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://dummy:dummy@localhost/dummy'
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -94,25 +106,34 @@ else:
 # Logging Configuration
 # ============================================
 if not app.debug and not app.testing:
-    # Production logging to file
-    if not os.path.exists('logs'):
-        os.mkdir('logs')
+    # Production logging to file (only if not on serverless platform like Vercel)
+    is_serverless = os.environ.get('VERCEL') or os.environ.get('AWS_LAMBDA_FUNCTION_NAME')
     
-    file_handler = RotatingFileHandler(
-        'logs/rollcallqr.log',
-        maxBytes=10240000,  # 10MB
-        backupCount=10      # Keep 10 backup files
-    )
-    file_handler.setFormatter(logging.Formatter(
-        '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
-    ))
-    file_handler.setLevel(logging.INFO)
+    if not is_serverless:
+        # File logging only on traditional servers
+        try:
+            if not os.path.exists('logs'):
+                os.mkdir('logs')
+            
+            file_handler = RotatingFileHandler(
+                'logs/rollcallqr.log',
+                maxBytes=10240000,  # 10MB
+                backupCount=10      # Keep 10 backup files
+            )
+            file_handler.setFormatter(logging.Formatter(
+                '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
+            ))
+            file_handler.setLevel(logging.INFO)
+            app.logger.addHandler(file_handler)
+        except (OSError, IOError) as e:
+            # If we can't create logs directory (e.g., on serverless), skip file logging
+            app.logger.warning('Could not create log file: {}'.format(e))
     
-    app.logger.addHandler(file_handler)
     app.logger.setLevel(logging.INFO)
     app.logger.info('═════════════════════════════════════════')
     app.logger.info('RollCallQR Application Startup')
     app.logger.info('Environment: {}'.format(os.environ.get('FLASK_ENV', 'development')))
+    app.logger.info('Platform: {}'.format('Vercel' if os.environ.get('VERCEL') else 'Traditional'))
     app.logger.info('═════════════════════════════════════════')
 
 # ============================================
