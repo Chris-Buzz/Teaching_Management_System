@@ -1,38 +1,41 @@
 {% extends "base.html" %}
 
-{% block title %}Check In - Teaching Management System{% endblock %}
+{% block title %}Check In - RollCallQR{% endblock %}
 
 {% block content %}
 {% if success %}
 <div class="success-modal" id="successModal">
     <div class="success-modal-content">
+        <button id="closeModal" class="close-btn" title="Close">
+            <i class="fas fa-times"></i>
+        </button>
         <div class="success-icon">
-            <i class="fas fa-check"></i>
+            <i class="fas fa-check-circle"></i>
         </div>
-        <h2>Attendance Marked!</h2>
-        <p>You've been successfully marked present for<br><span class="success-class-name">{{ session.class_ref.name }}</span></p>
-        <div style="margin-bottom: 1.5rem; text-align: center;">
+        <h2 style="animation: slideInDown 0.6s ease-out 0.2s backwards;">Attendance Marked!</h2>
+        <p style="animation: slideInUp 0.6s ease-out 0.3s backwards;">You've been successfully marked present for<br><span class="success-class-name">{{ session.class_ref.name }}</span></p>
+        <div style="margin-bottom: 1.5rem; text-align: center; animation: scaleIn 0.6s ease-out 0.4s backwards;">
             <div class="status-pill status-pill-present">
                 <i class="fas fa-check-circle"></i>
                 Present
             </div>
         </div>
         {% if suggest_register %}
-        <div class="alert alert-info" style="margin-bottom: 1.5rem; padding: 1rem; background: #e3f2fd; border-left: 4px solid #2196f3; border-radius: 4px; text-align: left; font-size: 0.95rem;">
+        <div class="alert alert-info" style="margin-bottom: 1.5rem; padding: 1rem; background: #e3f2fd; border-left: 4px solid #2196f3; border-radius: 4px; text-align: left; font-size: 0.95rem; animation: slideInUp 0.6s ease-out 0.5s backwards;">
             <i class="fas fa-info-circle"></i> <strong>Track your attendance!</strong><br>
             Register an account with <strong>{{ email }}</strong> to view your full attendance history and get automatically enrolled in your classes.
         </div>
         <div style="display: flex; flex-direction: column; gap: 0.75rem;">
-            <a href="{{ url_for('register', email=email) }}" class="btn btn-success" style="width: 100%;">
+            <a href="{{ url_for('register', email=email) }}" class="btn btn-success" style="width: 100%; animation: slideInUp 0.6s ease-out 0.6s backwards;">
                 <i class="fas fa-user-plus"></i> Create Account
             </a>
-            <a href="{{ url_for('login') }}" class="btn btn-primary" style="width: 100%;">
+            <a href="{{ url_for('login') }}" class="btn btn-primary" style="width: 100%; animation: slideInUp 0.6s ease-out 0.7s backwards;">
                 <i class="fas fa-sign-in-alt"></i> Go to Dashboard
             </a>
         </div>
         {% else %}
         <div style="display: flex; flex-direction: column; gap: 0.75rem;">
-            <a href="{{ url_for('login') }}" class="btn btn-primary" style="width: 100%;">
+            <a href="{{ url_for('login') }}" class="btn btn-primary" style="width: 100%; animation: slideInUp 0.6s ease-out 0.6s backwards;">
                 <i class="fas fa-sign-in-alt"></i> Go to Dashboard
             </a>
         </div>
@@ -41,16 +44,35 @@
 </div>
 
 <script>
-// Confetti effect (optional - simple celebration)
+// Handle close button and modal dismiss
+document.addEventListener('DOMContentLoaded', function() {
+    const modal = document.getElementById('successModal');
+    const closeBtn = document.getElementById('closeModal');
+    
+    if (modal && closeBtn) {
+        // Close button functionality
+        closeBtn.addEventListener('click', function() {
+            window.location.href = "{{ url_for('login') }}";
+        });
+        
+        // Click outside modal to close (on mobile-friendly area)
+        modal.addEventListener('click', function(e) {
+            // Only close if clicking on the modal backdrop, not the content
+            if (e.target === modal) {
+                window.location.href = "{{ url_for('login') }}";
+            }
+        });
+    }
+});
+
+// Auto-redirect after 10 seconds
 setTimeout(() => {
     const modal = document.getElementById('successModal');
     if (modal) {
-        modal.style.cursor = 'pointer';
-        modal.addEventListener('click', () => {
-            window.location.href = "{{ url_for('login') }}";
-        });
+        // Check if still on page
+        window.location.href = "{{ url_for('login') }}";
     }
-}, 1000);
+}, 10000);
 </script>
 {% else %}
 <div class="auth-container">

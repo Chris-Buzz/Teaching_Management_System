@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>{% block title %}Teaching Management System{% endblock %}</title>
+    <title>{% block title %}RollCallQR - Attendance Management{% endblock %}</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%230066cc'><path d='M12 1C6.48 1 2 5.48 2 11s4.48 10 10 10 10-4.48 10-10S17.52 1 12 1zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 7 15.5 7 14 7.67 14 8.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 7 8.5 7 7 7.67 7 8.5 7.67 10 8.5 10zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z'/></svg>" type="image/svg+xml">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
@@ -12,7 +13,7 @@
     <nav class="navbar">
         <div class="container">
             <a href="{{ url_for('index') }}" class="nav-brand">
-                <i class="fas fa-graduation-cap"></i> Teaching Management System
+                <i class="fas fa-qrcode"></i> RollCallQR
             </a>
             <div class="nav-menu">
                 {% if current_user.is_authenticated %}
@@ -35,13 +36,18 @@
     </nav>
 
     <main class="container">
+        <!-- Toast Container -->
+        <div id="toastContainer" class="toast-container"></div>
+
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
-                {% for category, message in messages %}
-                    <div class="alert alert-{{ category }}">
-                        {{ message }}
-                    </div>
-                {% endfor %}
+                <script>
+                    document.addEventListener('DOMContentLoaded', function() {
+                        {% for category, message in messages %}
+                            showToast("{{ message }}", "{{ category }}");
+                        {% endfor %}
+                    });
+                </script>
             {% endif %}
         {% endwith %}
 
@@ -50,8 +56,58 @@
 
     <footer>
         <div class="container">
-            <p><i class="fas fa-code"></i> &copy; 2025 Teaching Management System | Built with <i class="fas fa-heart" style="color: #ef4444;"></i> using Flask</p>
+            <p><i class="fas fa-graduation-cap"></i> &copy; 2025 RollCallQR - Attendance Management System</p>
         </div>
     </footer>
-</body>
-</html>
+
+    <!-- Toast Notification Script -->
+    <script>
+        function showToast(message, type = 'info', duration = 4000) {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            
+            // Determine icon and color based on type
+            let icon = 'fa-info-circle';
+            let bgColor = 'rgba(59, 130, 246, 0.95)';
+            let borderColor = '#3b82f6';
+            
+            if (type === 'success') {
+                icon = 'fa-check-circle';
+                bgColor = 'rgba(16, 185, 129, 0.95)';
+                borderColor = '#10b981';
+            } else if (type === 'danger' || type === 'error') {
+                icon = 'fa-exclamation-circle';
+                bgColor = 'rgba(239, 68, 68, 0.95)';
+                borderColor = '#ef4444';
+            } else if (type === 'warning') {
+                icon = 'fa-warning';
+                bgColor = 'rgba(245, 158, 11, 0.95)';
+                borderColor = '#f59e0b';
+            }
+            
+            toast.className = 'toast';
+            toast.style.cssText = `
+                background: ${bgColor};
+                border-left: 4px solid ${borderColor};
+                animation: slideInRight 0.4s ease-out;
+            `;
+            
+            toast.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                    <i class="fas ${icon}" style="color: white; font-size: 1.2rem;"></i>
+                    <span style="color: white; font-weight: 500;">${message}</span>
+                    <button style="margin-left: auto; background: none; border: none; color: white; cursor: pointer; font-size: 1.2rem; padding: 0;" onclick="this.parentElement.parentElement.remove();">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            `;
+            
+            container.appendChild(toast);
+            
+            // Auto-remove toast
+            setTimeout(() => {
+                toast.style.animation = 'slideOutRight 0.4s ease-out forwards';
+                setTimeout(() => toast.remove(), 400);
+            }, duration);
+        }
+    </script>

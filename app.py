@@ -6,6 +6,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_talisman import Talisman
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
 from datetime import datetime, timedelta, timezone
 import pytz
 import secrets
@@ -16,6 +17,8 @@ from functools import wraps
 import os
 import re
 from dotenv import load_dotenv
+import logging
+from logging.handlers import RotatingFileHandler
 
 # Load environment variables from .env file
 load_dotenv()
@@ -87,7 +90,34 @@ else:
         response.headers['X-XSS-Protection'] = '1; mode=block'
         return response
 
+# ============================================
+# Logging Configuration
+# ============================================
+if not app.debug and not app.testing:
+    # Production logging to file
+    if not os.path.exists('logs'):
+        os.mkdir('logs')
+    
+    file_handler = RotatingFileHandler(
+        'logs/rollcallqr.log',
+        maxBytes=10240000,  # 10MB
+        backupCount=10      # Keep 10 backup files
+    )
+    file_handler.setFormatter(logging.Formatter(
+        '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
+    ))
+    file_handler.setLevel(logging.INFO)
+    
+    app.logger.addHandler(file_handler)
+    app.logger.setLevel(logging.INFO)
+    app.logger.info('═════════════════════════════════════════')
+    app.logger.info('RollCallQR Application Startup')
+    app.logger.info('Environment: {}'.format(os.environ.get('FLASK_ENV', 'development')))
+    app.logger.info('═════════════════════════════════════════')
+
+# ============================================
 # Database Models
+# ============================================
 class PendingStudent(db.Model):
     """Students added to classes by teachers before they register"""
     id = db.Column(db.Integer, primary_key=True)
@@ -235,6 +265,33 @@ def teacher_required(f):
     return decorated_function
 
 # Routes
+def login_user_check():
+    return User.query.first() is not None
+
+# Health check endpoint for monitoring and uptime services
+@app.route('/health', methods=['GET'])
+@csrf.exempt  # Exempt from CSRF protection for monitoring services
+def health_check():
+    """
+    Health check endpoint for uptime monitoring.
+    Returns status and basic health metrics.
+    """
+    try:
+        # Check database connection
+        db.session.execute(db.text('SELECT 1'))
+        db_status = 'healthy'
+    except Exception as e:
+        db_status = f'error: {str(e)}'
+    
+    health_status = {
+        'status': 'healthy' if db_status == 'healthy' else 'degraded',
+        'timestamp': get_eastern_time().isoformat(),
+        'database': db_status,
+        'environment': os.environ.get('FLASK_ENV', 'development')
+    }
+    
+    return jsonify(health_status), 200 if db_status == 'healthy' else 503
+
 @app.route('/')
 def index():
     if current_user.is_authenticated:
@@ -627,6 +684,157 @@ def add_student(class_id):
     
     return render_template('add_student.html', class_obj=class_obj)
 
+@app.route('/teacher/class/<int:class_id>/bulk_upload', methods=['POST'])
+@login_required
+@teacher_required
+def bulk_upload_students(class_id):
+    """Bulk upload students from CSV file"""
+    class_obj = Class.query.get_or_404(class_id)
+    if class_obj.teacher_id != current_user.id:
+        flash('Access denied', 'danger')
+        return redirect(url_for('teacher_dashboard'))
+    
+    if 'file' not in request.files:
+        flash('No file provided', 'danger')
+        return redirect(url_for('view_class', class_id=class_id))
+    
+    file = request.files['file']
+    if file.filename == '':
+        flash('No file selected', 'danger')
+        return redirect(url_for('view_class', class_id=class_id))
+    
+    if not file.filename.endswith(('.csv', '.xlsx', '.txt')):
+        flash('Please upload a CSV, Excel, or text file', 'danger')
+        return redirect(url_for('view_class', class_id=class_id))
+    
+    try:
+        # Read CSV content
+        stream = io.StringIO(file.stream.read().decode('utf-8'), newline=None)
+        csv_reader = csv.reader(stream)
+        
+        # Get headers
+        headers = next(csv_reader, None)
+        if not headers:
+            flash('CSV file is empty', 'danger')
+            return redirect(url_for('view_class', class_id=class_id))
+        
+        # Normalize headers to lowercase
+        headers = [h.strip().lower() for h in headers]
+        
+        # Find column indices
+        email_idx = None
+        name_idx = None
+        student_id_idx = None
+        
+        for idx, header in enumerate(headers):
+            if 'email' in header:
+                email_idx = idx
+            elif 'name' in header:
+                name_idx = idx
+            elif 'student' in header and 'id' in header:
+                student_id_idx = idx
+        
+        if email_idx is None:
+            flash('CSV must contain an "email" column', 'danger')
+            return redirect(url_for('view_class', class_id=class_id))
+        
+        added_count = 0
+        skipped_count = 0
+        error_rows = []
+        
+        for row_num, row in enumerate(csv_reader, start=2):
+            if not row or all(not cell.strip() for cell in row):
+                continue
+            
+            try:
+                email = row[email_idx].strip().lower() if email_idx < len(row) else ''
+                name = row[name_idx].strip() if name_idx and name_idx < len(row) else ''
+                student_id = row[student_id_idx].strip() if student_id_idx and student_id_idx < len(row) else ''
+                
+                if not email:
+                    error_rows.append(f"Row {row_num}: Missing email")
+                    skipped_count += 1
+                    continue
+                
+                # Validate email format
+                is_valid, msg = validate_email(email)
+                if not is_valid:
+                    error_rows.append(f"Row {row_num}: {msg}")
+                    skipped_count += 1
+                    continue
+                
+                # Check if already enrolled
+                existing = Enrollment.query.filter(
+                    Enrollment.class_id == class_id,
+                    db.or_(
+                        db.func.lower(Enrollment.student_email) == email,
+                        Enrollment.student_id.in_(
+                            db.session.query(User.id).filter(db.func.lower(User.email) == email)
+                        )
+                    )
+                ).first()
+                
+                if existing:
+                    error_rows.append(f"Row {row_num}: {email} already enrolled")
+                    skipped_count += 1
+                    continue
+                
+                # Check if student is registered
+                student = User.query.filter(
+                    db.func.lower(User.email) == email,
+                    User.role == 'student'
+                ).first()
+                
+                if student:
+                    # Student is registered, create enrollment with student_id
+                    enrollment = Enrollment(class_id=class_id, student_id=student.id)
+                    db.session.add(enrollment)
+                else:
+                    # Student not registered yet, create pending enrollment
+                    enrollment = Enrollment(
+                        class_id=class_id,
+                        student_email=email,
+                        student_name=name if name else None
+                    )
+                    db.session.add(enrollment)
+                    
+                    # Create or update pending student record
+                    pending = PendingStudent.query.filter(db.func.lower(PendingStudent.email) == email).first()
+                    if not pending:
+                        pending = PendingStudent(
+                            email=email,
+                            name=name if name else None,
+                            added_by_teacher_id=current_user.id
+                        )
+                        db.session.add(pending)
+                    elif name and not pending.name:
+                        pending.name = name
+                
+                added_count += 1
+            
+            except Exception as e:
+                error_rows.append(f"Row {row_num}: {str(e)}")
+                skipped_count += 1
+                continue
+        
+        db.session.commit()
+        
+        # Build success message
+        message = f'Successfully added {added_count} student(s)'
+        if skipped_count > 0:
+            message += f'. {skipped_count} row(s) skipped.'
+            if error_rows and len(error_rows) <= 5:
+                message += ' Errors: ' + '; '.join(error_rows[:5])
+            elif error_rows:
+                message += f' (First 5 errors: ' + '; '.join(error_rows[:5]) + ')'
+        
+        flash(message, 'success' if added_count > 0 else 'warning')
+    
+    except Exception as e:
+        flash(f'Error processing file: {str(e)}', 'danger')
+    
+    return redirect(url_for('view_class', class_id=class_id))
+
 @app.route('/teacher/class/<int:class_id>/remove_student/<int:student_id>', methods=['POST'])
 @login_required
 @teacher_required
@@ -853,12 +1061,17 @@ def generate_qr(session_id):
     img_io.seek(0)
 
     # Return with proper headers for Vercel
-    return send_file(
+    # No cache headers to ensure fresh QR is generated on each request
+    response = send_file(
         img_io,
         mimetype='image/png',
         as_attachment=False,
         download_name=f'qr_session_{session_id}.png'
     )
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 @app.route('/check_in', methods=['GET', 'POST'])
 def check_in():
@@ -1245,6 +1458,120 @@ def pending_student_attendance_history(class_id, email):
                          attendance_rate=round(attendance_rate, 1),
                          is_pending=True)
 
+@app.route('/teacher/class/<int:class_id>/attendance_report')
+@login_required
+@teacher_required
+def class_attendance_report(class_id):
+    """Show overall attendance report for all students in a class"""
+    class_obj = Class.query.get_or_404(class_id)
+    
+    if class_obj.teacher_id != current_user.id:
+        flash('Access denied', 'danger')
+        return redirect(url_for('teacher_dashboard'))
+    
+    # Get all sessions for this class
+    sessions = AttendanceSession.query.filter_by(class_id=class_id, is_active=False).order_by(AttendanceSession.date.desc()).all()
+    total_sessions = len(sessions)
+    
+    if total_sessions == 0:
+        flash('No completed sessions yet for this class', 'info')
+        return redirect(url_for('view_class', class_id=class_id))
+    
+    # Get all students and their enrollment in this class
+    enrollments = Enrollment.query.filter_by(class_id=class_id).all()
+    
+    # Build student attendance summary
+    student_stats = []
+    
+    # Add registered students
+    for enrollment in enrollments:
+        if enrollment.student_id:
+            # Registered student
+            student = User.query.get(enrollment.student_id)
+            if student:
+                present_count = 0
+                late_count = 0
+                absent_count = 0
+                
+                for session in sessions:
+                    record = AttendanceRecord.query.filter_by(session_id=session.id, student_id=student.id).first()
+                    status = record.status if record else 'Absent'
+                    
+                    if status == 'Present':
+                        present_count += 1
+                    elif status == 'Late':
+                        late_count += 1
+                    else:
+                        absent_count += 1
+                
+                attendance_rate = ((present_count + late_count) / total_sessions * 100) if total_sessions > 0 else 0
+                
+                student_stats.append({
+                    'name': student.name,
+                    'email': student.email,
+                    'student_id': student.student_id,
+                    'status': 'Registered',
+                    'present_count': present_count,
+                    'late_count': late_count,
+                    'absent_count': absent_count,
+                    'attendance_rate': round(attendance_rate, 1),
+                    'user_id': student.id
+                })
+    
+    # Add pending students (not yet registered)
+    pending_emails = set()
+    for enrollment in enrollments:
+        if not enrollment.student_id and enrollment.student_email:
+            pending_emails.add(enrollment.student_email.lower())
+    
+    for email in pending_emails:
+        present_count = 0
+        late_count = 0
+        absent_count = 0
+        pending_student_name = None
+        
+        for session in sessions:
+            record = AttendanceRecord.query.filter(
+                AttendanceRecord.session_id == session.id,
+                db.func.lower(AttendanceRecord.student_email) == email
+            ).first()
+            status = record.status if record else 'Absent'
+            
+            if status == 'Present':
+                present_count += 1
+            elif status == 'Late':
+                late_count += 1
+            else:
+                absent_count += 1
+        
+        # Get pending student name if available
+        for enrollment in enrollments:
+            if enrollment.student_email and enrollment.student_email.lower() == email:
+                pending_student_name = enrollment.student_name if enrollment.student_name else 'Not Registered'
+                break
+        
+        attendance_rate = ((present_count + late_count) / total_sessions * 100) if total_sessions > 0 else 0
+        
+        student_stats.append({
+            'name': pending_student_name or 'Not Registered',
+            'email': email,
+            'student_id': None,
+            'status': 'Pending',
+            'present_count': present_count,
+            'late_count': late_count,
+            'absent_count': absent_count,
+            'attendance_rate': round(attendance_rate, 1),
+            'user_id': None
+        })
+    
+    # Sort by attendance rate descending
+    student_stats.sort(key=lambda x: x['attendance_rate'], reverse=True)
+    
+    return render_template('class_attendance_report.html',
+                         class_obj=class_obj,
+                         student_stats=student_stats,
+                         total_sessions=total_sessions)
+
 @app.route('/teacher/class/<int:class_id>/export')
 @login_required
 @teacher_required
@@ -1325,6 +1652,4 @@ with app.app_context():
 app = app
 
 if __name__ == '__main__':
-    # Only enable debug mode in development
-    debug_mode = os.environ.get('FLASK_ENV') == 'development'
-    app.run(debug=debug_mode)
+     app.run(debug=True, host='0.0.0.0', port=5000)
