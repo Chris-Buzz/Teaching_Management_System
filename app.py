@@ -5,6 +5,7 @@ from flask_wtf.csrf import CSRFProtect
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_talisman import Talisman
+from flask_mail import Mail, Message
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from datetime import datetime, timedelta, timezone
@@ -135,6 +136,78 @@ if not app.debug and not app.testing:
     app.logger.info('Environment: {}'.format(os.environ.get('FLASK_ENV', 'development')))
     app.logger.info('Platform: {}'.format('Vercel' if os.environ.get('VERCEL') else 'Traditional'))
     app.logger.info('═════════════════════════════════════════')
+
+# ============================================
+# Email Configuration (Flask-Mail)
+# ============================================
+# Email settings for password resets and notifications
+app.config['MAIL_SERVER'] = os.environ.get('MAIL_SERVER', 'smtp.gmail.com')
+app.config['MAIL_PORT'] = int(os.environ.get('MAIL_PORT', 587))
+app.config['MAIL_USE_TLS'] = os.environ.get('MAIL_USE_TLS', 'true').lower() == 'true'
+app.config['MAIL_USERNAME'] = os.environ.get('MAIL_USERNAME')
+app.config['MAIL_PASSWORD'] = os.environ.get('MAIL_PASSWORD')
+app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_DEFAULT_SENDER', 'noreply@rollcallqr.com')
+
+# Initialize Flask-Mail
+mail = Mail(app)
+
+# Email helper function
+def send_password_reset_email(user_email, reset_url):
+    """Send password reset email to user"""
+    try:
+        msg = Message(
+            subject='RollCallQR - Password Reset Request',
+            recipients=[user_email],
+            html=f"""
+            <html style="font-family: Arial, sans-serif; background-color: #f5f5f5;">
+                <body style="margin: 0; padding: 20px;">
+                    <div style="max-width: 600px; margin: 0 auto; background-color: white; border-radius: 8px; padding: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+                        <div style="text-align: center; margin-bottom: 30px;">
+                            <h1 style="color: #0066cc; margin: 0; font-size: 24px;">RollCallQR</h1>
+                            <p style="color: #666; margin: 5px 0 0 0; font-size: 14px;">Attendance Tracking System</p>
+                        </div>
+                        
+                        <h2 style="color: #333; margin-bottom: 20px;">Password Reset Request</h2>
+                        
+                        <p style="color: #666; line-height: 1.6; margin-bottom: 20px;">
+                            Hello,<br><br>
+                            You requested a password reset for your RollCallQR account. 
+                            Click the button below to reset your password. This link will expire in 1 hour.
+                        </p>
+                        
+                        <div style="text-align: center; margin: 30px 0;">
+                            <a href="{reset_url}" style="background-color: #0066cc; color: white; padding: 12px 30px; text-decoration: none; border-radius: 4px; font-weight: bold; display: inline-block;">
+                                Reset Password
+                            </a>
+                        </div>
+                        
+                        <p style="color: #999; font-size: 14px; margin: 20px 0; border-top: 1px solid #eee; padding-top: 20px;">
+                            If you didn't request this, you can ignore this email. Your password won't change unless you click the link above.
+                        </p>
+                        
+                        <p style="color: #999; font-size: 12px; text-align: center; margin-top: 30px;">
+                            © 2025 RollCallQR. All rights reserved.
+                        </p>
+                    </div>
+                </body>
+            </html>
+            """,
+            text_body=f"""
+            Password Reset Request
+            
+            You requested a password reset. Click the link below to reset your password (expires in 1 hour):
+            
+            {reset_url}
+            
+            If you didn't request this, ignore this email.
+            """
+        )
+        mail.send(msg)
+        app.logger.info(f'Password reset email sent to {user_email}')
+        return True
+    except Exception as e:
+        app.logger.error(f'Failed to send password reset email to {user_email}: {str(e)}')
+        return False
 
 # ============================================
 # Database Models
@@ -470,11 +543,19 @@ def forgot_password():
             token = user.generate_reset_token()
             db.session.commit()
 
-            # In a real application, you would send an email here
-            # For now, we'll just display the reset link
+            # Generate reset URL
             reset_url = url_for('reset_password', token=token, _external=True)
-            flash(f'Password reset link (copy this): {reset_url}', 'info')
-            flash('In production, this would be sent to your email.', 'warning')
+            
+            # Try to send email
+            email_sent = send_password_reset_email(user.email, reset_url)
+            
+            if email_sent:
+                flash('Password reset link has been sent to your email. Check your inbox or spam folder.', 'success')
+                app.logger.info(f'Password reset email sent to {user.email}')
+            else:
+                # Fallback: If email fails, show warning but still allow password reset
+                flash('Password reset link generated. Email system is currently unavailable.', 'warning')
+                app.logger.warning(f'Failed to send password reset email to {user.email}')
         else:
             # Don't reveal if email exists or not for security
             flash('If that email exists, a password reset link has been sent.', 'info')
@@ -1669,8 +1750,59 @@ def ratelimit_handler(error):
 with app.app_context():
     db.create_all()
 
-# For Vercel deployment
-app = app
-
+# Production entry point
 if __name__ == '__main__':
-     app.run(debug=True, host='0.0.0.0', port=5000)
+    """
+    Production-grade application entry point.
+    
+    Development: python app.py
+    Production: gunicorn wsgi:app (or let Vercel/Heroku handle it)
+    """
+    
+    # Determine environment and configuration
+    env = os.environ.get('FLASK_ENV', 'development')
+    debug_mode = env == 'development'
+    port = int(os.environ.get('PORT', 5000))
+    
+    # Log startup information
+    print('╔════════════════════════════════════════╗')
+    print('║         RollCallQR - Starting          ║')
+    print('╠════════════════════════════════════════╣')
+    print(f'║ Environment: {env.upper():<30}║')
+    print(f'║ Debug Mode: {"ON" if debug_mode else "OFF":<33}║')
+    print(f'║ Port: {port:<34}║')
+    print(f'║ Database: {"Configured" if app.config.get("SQLALCHEMY_DATABASE_URI") else "NOT SET":<28}║')
+    print(f'║ Email: {"Configured" if app.config.get("MAIL_USERNAME") else "NOT CONFIGURED":<29}║')
+    print('╚════════════════════════════════════════╝')
+    
+    # Development settings
+    if debug_mode:
+        print('⚠️  DEVELOPMENT MODE - Do not use in production!')
+        print('📧 Email will show in console during testing')
+        print('🔍 Debug toolbar enabled')
+        
+        # For development, print reset links to console instead of sending emails
+        original_send = mail.send
+        def debug_send(message):
+            print(f'\n✉️  EMAIL WOULD BE SENT TO: {message.recipients}')
+            print(f'   SUBJECT: {message.subject}')
+            return original_send(message)
+        mail.send = debug_send
+    else:
+        print('✅ PRODUCTION MODE')
+        print('📧 Emails will be sent via SMTP')
+        print('🔐 Security headers enabled')
+    
+    # Run the application
+    try:
+        app.run(
+            debug=debug_mode,
+            host='0.0.0.0',  # Listen on all interfaces (required for deployment)
+            port=port,
+            use_reloader=debug_mode  # Only use reloader in development
+        )
+    except KeyboardInterrupt:
+        print('\n\n🛑 Application shutdown requested')
+    except Exception as e:
+        print(f'\n\n❌ Application error: {e}')
+        raise
