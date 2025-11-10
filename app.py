@@ -131,11 +131,11 @@ if not app.debug and not app.testing:
             app.logger.warning('Could not create log file: {}'.format(e))
     
     app.logger.setLevel(logging.INFO)
-    app.logger.info('═════════════════════════════════════════')
+    app.logger.info('==========================================')
     app.logger.info('RollCallQR Application Startup')
     app.logger.info('Environment: {}'.format(os.environ.get('FLASK_ENV', 'development')))
     app.logger.info('Platform: {}'.format('Vercel' if os.environ.get('VERCEL') else 'Traditional'))
-    app.logger.info('═════════════════════════════════════════')
+    app.logger.info('==========================================')
 
 # ============================================
 # Email Configuration (Flask-Mail)
@@ -1752,14 +1752,8 @@ with app.app_context():
 
 # Production entry point
 if __name__ == '__main__':
-    """
-    Production-grade application entry point.
-    
-    Development: python app.py
-    Production: gunicorn wsgi:app (or let Vercel/Heroku handle it)
-    """
-    
-    # Determine environment and configuration
+    # Determine environment and configuration 
+
     env = os.environ.get('FLASK_ENV', 'development')
     debug_mode = env == 'development'
     port = int(os.environ.get('PORT', 5000))
@@ -1780,6 +1774,7 @@ if __name__ == '__main__':
         print('⚠️  DEVELOPMENT MODE - Do not use in production!')
         print('📧 Email will show in console during testing')
         print('🔍 Debug toolbar enabled')
+        print('💡 TIP: Run with `python app.py` for development')
         
         # For development, print reset links to console instead of sending emails
         original_send = mail.send
@@ -1792,6 +1787,7 @@ if __name__ == '__main__':
         print('✅ PRODUCTION MODE')
         print('📧 Emails will be sent via SMTP')
         print('🔐 Security headers enabled')
+        print('💡 TIP: Run with `gunicorn app:app` for production')
     
     # Run the application
     try:
